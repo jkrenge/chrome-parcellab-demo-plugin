@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "parcelLab Demo Layer",
+  "description": "Hide elements or replace their contents on demo pages, then reapply those changes automatically on revisit.",
+  "version": "0.1.0",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "parcelLab Demo Layer",
+    "default_icon": {
+      "16": "icons/parcellab_extension_icon_16.png",
+      "32": "icons/parcellab_extension_icon.png",
+      "48": "icons/parcellab_extension_icon_48.png",
+      "128": "icons/parcellab_extension_icon.png"
+    }
+  },
+  "icons": {
+    "16": "icons/parcellab_extension_icon_16.png",
+    "32": "icons/parcellab_extension_icon.png",
+    "48": "icons/parcellab_extension_icon_48.png",
+    "128": "icons/parcellab_extension_icon.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"]
+}

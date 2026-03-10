@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>parcelLab Demo Layer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      body {
+        min-width: 540px;
+        min-height: 640px;
+        margin: 0;
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+
+      .boot-shell {
+        padding: 16px;
+      }
+
+      .boot-title {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .boot-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 16px;
+      }
+
+      .boot-button {
+        height: 48px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        background: white;
+      }
+
+      .boot-button--primary {
+        border-color: #2563eb;
+        background: #2563eb;
+      }
+
+      .boot-panel {
+        margin-top: 18px;
+        min-height: 220px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: white;
+      }
+
+      .boot-panel-header {
+        height: 48px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <main aria-busy="true" class="boot-shell">
+        <h1 class="boot-title">parcelLab Demo Layer</h1>
+        <div class="boot-actions">
+          <div class="boot-button boot-button--primary"></div>
+          <div class="boot-button"></div>
+        </div>
+        <section class="boot-panel">
+          <div class="boot-panel-header"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/popup/main.tsx"></script>
+  </body>
+</html>

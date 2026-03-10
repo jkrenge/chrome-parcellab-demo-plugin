@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    color-scheme: light;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    min-width: 540px;
+    min-height: 640px;
+    margin: 0;
+    background: #f1f5f9;
+  }
+
+  button {
+    cursor: pointer;
+  }
+}
