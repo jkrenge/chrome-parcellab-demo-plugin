@@ -46,7 +46,7 @@ type RuleGroup = {
 };
 
 const DEFAULT_TRACK_AND_TRACE_CONFIG: TrackAndTraceConfig = {
-  userId: '',
+  userId: '1612197',
   lang: 'en',
   showArticleList: true
 };
@@ -70,6 +70,11 @@ export default function App() {
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const canStartReplaceSelection =
+    !isHydrating &&
+    activeTab.supported &&
+    busyAction === null &&
+    replaceConfig.userId.trim().length > 0;
 
   const groupedRules = groupRulesByPage(allRules, activeTab);
 
@@ -264,7 +269,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-3">
             <button
               className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-              disabled={isHydrating || !activeTab.supported || busyAction !== null}
+              disabled={!canStartReplaceSelection}
               onClick={() => void beginSelection('replace')}
             >
               {busyAction === 'replace-selection'
