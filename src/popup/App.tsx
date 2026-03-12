@@ -1,8 +1,21 @@
 import { startTransition, useEffect, useState } from 'react';
 import {
+  buildDemoConfigFromDraft,
+  DEFAULT_DEMO_DRAFT_CONFIG,
+  DEMO_PLUGIN_OPTIONS,
+  formatDemoConfigSummary,
+  formatLanguageLabel,
+  LANGUAGE_OPTIONS,
+  mergeDemoConfigIntoDraft,
+  normalizeDemoDraftConfig,
+  validateDemoDraftConfig
+} from '../shared/demo';
+import {
+  getDemoDraftConfig,
   getSavedModifications,
   removeModifications,
-  resolveRuleScopeUrl
+  resolveRuleScopeUrl,
+  saveDemoDraftConfig
 } from '../shared/storage';
 import {
   compactUrl,
@@ -11,11 +24,13 @@ import {
   normalizeUrl
 } from '../shared/url';
 import type {
+  DemoConfig,
+  DemoDraftConfig,
+  DemoPluginKind,
   ContentResponse,
   ModificationAction,
   SavedModification,
-  SupportedLanguage,
-  TrackAndTraceConfig
+  SupportedLanguage
 } from '../shared/types';
 
 type ActiveTabState = {
@@ -40,32 +55,16 @@ type RuleGroup = {
   scopeUrl: string;
   url: string;
   pageTitle: string;
-  demoConfig?: TrackAndTraceConfig;
+  demoConfig?: DemoConfig;
   rules: SavedModification[];
   isCurrentPage: boolean;
 };
 
-const DEFAULT_TRACK_AND_TRACE_CONFIG: TrackAndTraceConfig = {
-  userId: '1612197',
-  lang: 'en',
-  showArticleList: true
-};
-
-const LANGUAGE_OPTIONS: Array<{ label: string; value: SupportedLanguage }> = [
-  { label: 'English', value: 'en' },
-  { label: 'German', value: 'de' },
-  { label: 'Spanish', value: 'es' },
-  { label: 'French', value: 'fr' },
-  { label: 'Italian', value: 'it' },
-  { label: 'Japanese', value: 'ja' },
-  { label: 'Korean', value: 'ko' }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTabState>(EMPTY_TAB_STATE);
   const [allRules, setAllRules] = useState<SavedModification[]>([]);
-  const [replaceConfig, setReplaceConfig] = useState<TrackAndTraceConfig>(
-    DEFAULT_TRACK_AND_TRACE_CONFIG
+  const [draftConfig, setDraftConfig] = useState<DemoDraftConfig>(
+    DEFAULT_DEMO_DRAFT_CONFIG
   );
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
@@ -74,7 +73,7 @@ export default function App() {
     !isHydrating &&
     activeTab.supported &&
     busyAction === null &&
-    replaceConfig.userId.trim().length > 0;
+    validateDemoDraftConfig(draftConfig) === undefined;
 
   const groupedRules = groupRulesByPage(allRules, activeTab);
 
@@ -84,12 +83,13 @@ export default function App() {
 
   async function hydrate(): Promise<void> {
     try {
-      const [[tab], rules] = await Promise.all([
+      const [[tab], rules, persistedDraft] = await Promise.all([
         chrome.tabs.query({
           active: true,
           currentWindow: true
         }),
-        getSavedModifications()
+        getSavedModifications(),
+        getDemoDraftConfig()
       ]);
 
       const url = tab?.url ?? '';
@@ -97,6 +97,9 @@ export default function App() {
       const normalizedUrl = supported ? normalizeUrl(url) : '';
       const normalizedScopeUrl = supported ? normalizeScopeUrl(url) : '';
       const currentPageConfig = findPageDemoConfig(rules, normalizedScopeUrl);
+      const nextDraftConfig = currentPageConfig
+        ? mergeDemoConfigIntoDraft(persistedDraft, currentPageConfig)
+        : normalizeDemoDraftConfig(persistedDraft);
 
       startTransition(() => {
         setActiveTab({
@@ -108,7 +111,7 @@ export default function App() {
           supported
         });
         setAllRules(rules);
-        setReplaceConfig(currentPageConfig ?? DEFAULT_TRACK_AND_TRACE_CONFIG);
+        setDraftConfig(nextDraftConfig);
       });
 
       if (!supported) {
@@ -146,11 +149,15 @@ export default function App() {
       return;
     }
 
-    if (action === 'replace' && !/^\d{1,7}$/.test(replaceConfig.userId)) {
-      setStatusMessage('Enter a numeric parcelLab user ID with up to 7 digits.');
+    const replaceValidationMessage =
+      action === 'replace' ? validateDemoDraftConfig(draftConfig) : undefined;
+    if (replaceValidationMessage) {
+      setStatusMessage(replaceValidationMessage);
       return;
     }
 
+    const demoConfig =
+      action === 'replace' ? buildDemoConfigFromDraft(draftConfig) : undefined;
     const actionKey = `${action}-selection`;
     setBusyAction(actionKey);
     setStatusMessage(
@@ -165,7 +172,7 @@ export default function App() {
         type: 'START_PICKER',
         action,
         html: '',
-        demoConfig: action === 'replace' ? replaceConfig : undefined
+        demoConfig
       })) as ContentResponse;
 
       if (!response?.ok) {
@@ -218,6 +225,23 @@ export default function App() {
     }
   }
 
+  function updateDraftConfig(
+    update: (current: DemoDraftConfig) => DemoDraftConfig
+  ): void {
+    setDraftConfig((current) => {
+      const next = normalizeDemoDraftConfig(update(current));
+      void saveDemoDraftConfig(next);
+      return next;
+    });
+  }
+
+  const accountIdLabel =
+    draftConfig.plugin === 'track-and-trace' ? 'User ID' : 'Account Name';
+  const accountIdPlaceholder =
+    draftConfig.plugin === 'track-and-trace'
+      ? '1612197'
+      : 'parcellab-account-name';
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-900">
       <div className="space-y-4">
@@ -229,40 +253,93 @@ export default function App() {
 
         <section className="grid grid-cols-2 gap-3">
           <label className="space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">User ID</span>
+            <span className="text-xs font-medium text-slate-500">Plugin</span>
+            <div className="relative">
+              <select
+                className="h-11 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-14 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={draftConfig.plugin}
+                onChange={(event) =>
+                  updateDraftConfig((current) => ({
+                    ...current,
+                    plugin: event.target.value as DemoPluginKind
+                  }))
+                }
+              >
+                {DEMO_PLUGIN_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </div>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">Language</span>
+            <div className="relative">
+              <select
+                className="h-11 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-14 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={draftConfig.lang}
+                onChange={(event) =>
+                  updateDraftConfig((current) => ({
+                    ...current,
+                    lang: event.target.value as SupportedLanguage
+                  }))
+                }
+              >
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron />
+            </div>
+          </label>
+        </section>
+
+        <section
+          className={`grid gap-3 ${
+            draftConfig.plugin === 'returns-portal' ? 'grid-cols-2' : 'grid-cols-1'
+          }`}
+        >
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">
+              {accountIdLabel}
+            </span>
             <input
               className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              inputMode="numeric"
-              maxLength={7}
-              placeholder="1234567"
-              value={replaceConfig.userId}
+              inputMode={draftConfig.plugin === 'track-and-trace' ? 'numeric' : 'text'}
+              maxLength={draftConfig.plugin === 'track-and-trace' ? 7 : undefined}
+              placeholder={accountIdPlaceholder}
+              value={draftConfig.accountId}
               onChange={(event) =>
-                setReplaceConfig((current) => ({
+                updateDraftConfig((current) => ({
                   ...current,
-                  userId: event.target.value.replace(/\D+/g, '').slice(0, 7)
+                  accountId:
+                    current.plugin === 'track-and-trace'
+                      ? event.target.value.replace(/\D+/g, '').slice(0, 7)
+                      : event.target.value
                 }))
               }
             />
           </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">Language</span>
-            <select
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              value={replaceConfig.lang}
-              onChange={(event) =>
-                setReplaceConfig((current) => ({
-                  ...current,
-                  lang: event.target.value as SupportedLanguage
-                }))
-              }
-            >
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {draftConfig.plugin === 'returns-portal' ? (
+            <label className="space-y-1.5">
+              <span className="text-xs font-medium text-slate-500">Portal Code</span>
+              <input
+                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                placeholder="xt-de"
+                value={draftConfig.portalCode}
+                onChange={(event) =>
+                  updateDraftConfig((current) => ({
+                    ...current,
+                    portalCode: event.target.value.trimStart()
+                  }))
+                }
+              />
+            </label>
+          ) : null}
         </section>
 
         <section>
@@ -288,7 +365,7 @@ export default function App() {
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}
 
-        {groupedRules.map((group) => (
+          {groupedRules.map((group) => (
           <PageRulesPanel
             activeAction={busyAction}
             group={group}
@@ -326,8 +403,7 @@ function PageRulesPanel({
           </h2>
           {group.demoConfig ? (
             <p className="mt-1 truncate text-xs text-slate-600">
-              User ID {group.demoConfig.userId} ·{' '}
-              {formatLanguageLabel(group.demoConfig.lang)}
+              {formatDemoConfigSummary(group.demoConfig)}
             </p>
           ) : null}
           <p className="mt-1 truncate text-xs text-slate-500">
@@ -345,7 +421,7 @@ function PageRulesPanel({
       <table className="w-full table-fixed text-left text-sm">
         <thead className="text-slate-500">
           <tr>
-            <th className="w-24 px-4 py-1.5 font-medium">Type</th>
+            <th className="w-32 px-4 py-1.5 font-medium">Type</th>
             <th className="px-3 py-2 font-medium">Title</th>
             <th className="w-12 px-4 py-1.5" aria-label="Delete rule" />
           </tr>
@@ -356,12 +432,12 @@ function PageRulesPanel({
               <td className="px-4 py-2">
                 <span
                   className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    rule.action === 'replace'
+                    resolveRuleTypeLabel(rule) !== 'Hide'
                       ? 'bg-blue-100 text-blue-700'
                       : 'bg-slate-200 text-slate-700'
                   }`}
                 >
-                  {rule.action === 'replace' ? 'Replace' : 'Hide'}
+                  {resolveRuleTypeLabel(rule)}
                 </span>
               </td>
               <td className="px-3 py-2">
@@ -455,7 +531,7 @@ function resolvePageTitle(
 function findPageDemoConfig(
   rules: SavedModification[],
   normalizedScopeUrl: string
-): TrackAndTraceConfig | undefined {
+): DemoConfig | undefined {
   return findFirstDemoConfig(
     rules.filter(
       (rule) =>
@@ -467,12 +543,24 @@ function findPageDemoConfig(
 
 function findFirstDemoConfig(
   rules: SavedModification[]
-): TrackAndTraceConfig | undefined {
+): DemoConfig | undefined {
   return rules.find((rule) => rule.demoConfig)?.demoConfig;
 }
 
-function formatLanguageLabel(language: SupportedLanguage): string {
-  return LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;
+function resolveRuleTypeLabel(rule: SavedModification): string {
+  if (rule.action === 'hide') {
+    return 'Hide';
+  }
+
+  if (rule.demoConfig?.kind === 'returns-portal') {
+    return 'Returns Portal';
+  }
+
+  if (rule.demoConfig?.kind === 'track-and-trace') {
+    return 'Track & Trace';
+  }
+
+  return 'Replace';
 }
 
 function TrashIcon() {
@@ -489,6 +577,25 @@ function TrashIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M10 11v6m4-6v6M4 7h16m-2 0-.7 10.1A2 2 0 0 1 15.3 19H8.7a2 2 0 0 1-2-1.9L6 7m3-3h6a1 1 0 0 1 1 1v2H8V5a1 1 0 0 1 1-1Z"
+      />
+    </svg>
+  );
+}
+
+function SelectChevron() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-700"
+      fill="none"
+      viewBox="0 0 20 20"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m5 7 5 5 5-5"
       />
     </svg>
   );

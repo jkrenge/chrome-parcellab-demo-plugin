@@ -1,4 +1,5 @@
 export type ModificationAction = 'hide' | 'replace';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal';
 
 export type SupportedLanguage =
   | 'en'
@@ -10,8 +11,26 @@ export type SupportedLanguage =
   | 'ko';
 
 export type TrackAndTraceConfig = {
+  kind: 'track-and-trace';
   userId: string;
   lang: SupportedLanguage;
+  showArticleList: boolean;
+};
+
+export type ReturnsPortalConfig = {
+  kind: 'returns-portal';
+  accountName: string;
+  portalCode: string;
+  lang: SupportedLanguage;
+};
+
+export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig;
+
+export type DemoDraftConfig = {
+  plugin: DemoPluginKind;
+  accountId: string;
+  lang: SupportedLanguage;
+  portalCode: string;
   showArticleList: boolean;
 };
 
@@ -23,7 +42,7 @@ export type SavedModification = {
   selector: string;
   action: ModificationAction;
   html: string;
-  demoConfig?: TrackAndTraceConfig;
+  demoConfig?: DemoConfig;
   summary: string;
   createdAt: string;
 };
@@ -34,7 +53,7 @@ export type ContentRequest =
       type: 'START_PICKER';
       action: ModificationAction;
       html: string;
-      demoConfig?: TrackAndTraceConfig;
+      demoConfig?: DemoConfig;
     }
   | { type: 'RESTORE_RULES'; ruleIds: string[] };
 
@@ -48,4 +67,9 @@ export type BackgroundRequest =
       type: 'RENDER_TRACK_AND_TRACE';
       containerId: string;
       demoConfig: TrackAndTraceConfig;
+    }
+  | {
+      type: 'RENDER_RETURNS_PORTAL';
+      containerId: string;
+      demoConfig: ReturnsPortalConfig;
     };

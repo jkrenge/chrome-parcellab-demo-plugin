@@ -1,3 +1,4 @@
+import { normalizeDemoConfig } from '../shared/demo';
 import {
   filterRulesForUrl,
   getSavedModifications,
@@ -8,6 +9,7 @@ import { isWebUrl, normalizeScopeUrl, normalizeUrl } from '../shared/url';
 import type {
   ContentRequest,
   ContentResponse,
+  DemoConfig,
   ModificationAction,
   SavedModification,
   TrackAndTraceConfig
@@ -31,7 +33,7 @@ type AppliedState = HideState | ReplaceState;
 type PickerState = {
   action: ModificationAction;
   html: string;
-  demoConfig?: TrackAndTraceConfig;
+  demoConfig?: DemoConfig;
   hoveredElement: HTMLElement | null;
 };
 
@@ -226,8 +228,14 @@ function createController(): Controller {
       });
     }
 
-    if (rule.demoConfig) {
+    const demoConfig = normalizeDemoConfig(rule.demoConfig);
+    if (demoConfig?.kind === 'track-and-trace') {
       renderTrackAndTraceRule(element, rule);
+      return;
+    }
+
+    if (demoConfig?.kind === 'returns-portal') {
+      renderReturnsPortalRule(element, rule);
       return;
     }
 
@@ -269,7 +277,7 @@ function createController(): Controller {
   function startPicker(
     action: ModificationAction,
     html: string,
-    demoConfig?: TrackAndTraceConfig
+    demoConfig?: DemoConfig
   ): void {
     stopPicker();
 
@@ -620,13 +628,14 @@ function renderTrackAndTraceRule(
   element: HTMLElement,
   rule: SavedModification
 ): void {
-  if (!rule.demoConfig) {
+  const demoConfig = normalizeDemoConfig(rule.demoConfig);
+  if (demoConfig?.kind !== 'track-and-trace') {
     return;
   }
 
   const containerId = `parcellab-track-and-trace-${rule.id}`;
-  const renderKey = `${rule.demoConfig.userId}:${rule.demoConfig.lang}:${String(
-    rule.demoConfig.showArticleList
+  const renderKey = `${demoConfig.userId}:${demoConfig.lang}:${String(
+    demoConfig.showArticleList
   )}`;
 
   let container = element.querySelector<HTMLElement>(
@@ -668,7 +677,7 @@ function renderTrackAndTraceRule(
     .sendMessage({
       type: 'RENDER_TRACK_AND_TRACE',
       containerId,
-      demoConfig: rule.demoConfig
+      demoConfig
     })
     .then((response?: ContentResponse) => {
       if (!container) {
@@ -698,12 +707,114 @@ function renderTrackAndTraceRule(
     });
 }
 
+function renderReturnsPortalRule(
+  element: HTMLElement,
+  rule: SavedModification
+): void {
+  const demoConfig = normalizeDemoConfig(rule.demoConfig);
+  if (demoConfig?.kind !== 'returns-portal') {
+    return;
+  }
+
+  const containerId = `parcellab-returns-portal-${rule.id}`;
+  const renderKey = `${demoConfig.accountName}:${demoConfig.portalCode}:${demoConfig.lang}`;
+
+  let container = element.querySelector<HTMLElement>(
+    `#${CSS.escape(containerId)}`
+  );
+
+  if (!container) {
+    element.innerHTML = '';
+    container = document.createElement('div');
+    container.id = containerId;
+    container.dataset.plDemoReturnsRoot = 'true';
+    container.dataset.plDemoReturnsKey = renderKey;
+    container.style.position = 'relative';
+    container.style.minHeight = '320px';
+
+    const loadingCopy = document.createElement('div');
+    loadingCopy.dataset.plDemoReturnsPlaceholder = 'true';
+    loadingCopy.style.margin = '32px auto';
+    loadingCopy.style.maxWidth = '560px';
+    loadingCopy.style.padding = '16px 18px';
+    loadingCopy.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+    loadingCopy.style.borderRadius = '12px';
+    loadingCopy.style.background = '#f8fafc';
+    loadingCopy.style.color = '#334155';
+    loadingCopy.style.font = '500 14px/1.5 system-ui, sans-serif';
+    loadingCopy.textContent = 'Loading parcelLab Returns Portal…';
+    container.appendChild(loadingCopy);
+    element.appendChild(container);
+  }
+
+  if (
+    container.dataset.plDemoReturnsKey === renderKey &&
+    (container.dataset.plDemoReturnsRequested === 'pending' ||
+      container.dataset.plDemoReturnsRequested === 'running' ||
+      container.dataset.plDemoReturnsRendered === 'true')
+  ) {
+    return;
+  }
+
+  container.dataset.plDemoReturnsKey = renderKey;
+  container.dataset.plDemoReturnsRequested = 'pending';
+  container.dataset.plDemoReturnsRendered = 'false';
+
+  void chrome.runtime
+    .sendMessage({
+      type: 'RENDER_RETURNS_PORTAL',
+      containerId,
+      demoConfig
+    })
+    .then((response?: ContentResponse) => {
+      if (!container) {
+        return;
+      }
+
+      if (!response?.ok) {
+        container.dataset.plDemoReturnsRequested = 'false';
+        container.dataset.plDemoReturnsRendered = 'false';
+        showReturnsPortalError(
+          container,
+          response?.error ?? 'parcelLab Returns Portal failed to render.'
+        );
+      }
+    })
+    .catch((error: unknown) => {
+      if (container) {
+        container.dataset.plDemoReturnsRequested = 'false';
+        container.dataset.plDemoReturnsRendered = 'false';
+        showReturnsPortalError(
+          container,
+          error instanceof Error
+            ? error.message
+            : 'parcelLab Returns Portal failed to render.'
+        );
+      }
+    });
+}
+
 function showTrackAndTraceError(
   container: HTMLElement,
   message: string
 ): void {
+  showPluginError(container, message, 'pl-demo-track-error');
+}
+
+function showReturnsPortalError(
+  container: HTMLElement,
+  message: string
+): void {
+  showPluginError(container, message, 'pl-demo-returns-error');
+}
+
+function showPluginError(
+  container: HTMLElement,
+  message: string,
+  errorKey: string
+): void {
   const existingMessage = container.querySelector<HTMLElement>(
-    '[data-pl-demo-track-error="true"]'
+    `[data-${errorKey}="true"]`
   );
 
   if (existingMessage) {
@@ -712,7 +823,7 @@ function showTrackAndTraceError(
   }
 
   const wrapper = document.createElement('div');
-  wrapper.dataset.plDemoTrackError = 'true';
+  wrapper.setAttribute(`data-${errorKey}`, 'true');
   wrapper.style.margin = '24px auto';
   wrapper.style.maxWidth = '560px';
   wrapper.style.padding = '16px 18px';
