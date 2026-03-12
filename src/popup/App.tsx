@@ -553,11 +553,11 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
   }
 
   if (rule.demoConfig?.kind === 'returns-portal') {
-    return 'Returns Portal';
+    return 'Returns';
   }
 
   if (rule.demoConfig?.kind === 'track-and-trace') {
-    return 'Track & Trace';
+    return 'Tracking';
   }
 
   return 'Replace';
