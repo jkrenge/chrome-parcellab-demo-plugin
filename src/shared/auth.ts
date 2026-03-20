@@ -1,6 +1,6 @@
 const OAUTH_ISSUER_URL = 'https://auth.parcellab.com/realms/parcellab';
 const OAUTH_CLIENT_ID = 'chrome-demo-layer';
-const OAUTH_SCOPES = 'openid profile email';
+const OAUTH_SCOPES = 'openid profile email roles';
 
 const AUTH_STORAGE_KEY = 'oauthTokens';
 
