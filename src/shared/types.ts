@@ -86,7 +86,6 @@ export type ContentResponse =
 
 export type ChatbotConfig = {
   agentId: string;
-  token: string;
   baseUrl: string;
 };
 
@@ -107,6 +106,11 @@ export type ChatbotExecuteRequest = {
 export type ChatbotResponse =
   | { ok: true; threadId: string; messages: ChatMessage[] }
   | { ok: false; error: string };
+
+export type AuthStatusResponse = {
+  ok: true;
+  authenticated: boolean;
+};
 
 export type BackgroundRequest =
   | { type: 'SYNC_RULES' }

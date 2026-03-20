@@ -8,7 +8,6 @@ const CHATBOT_CONFIG_KEY = 'chatbotConfig';
 
 const DEFAULT_CHATBOT_CONFIG: ChatbotConfig = {
   agentId: '',
-  token: '',
   baseUrl: 'https://product-api.parcellab.com'
 };
 
@@ -90,7 +89,6 @@ export async function saveChatbotConfig(
   await chrome.storage.local.set({
     [CHATBOT_CONFIG_KEY]: {
       agentId: config.agentId.trim(),
-      token: config.token.trim(),
       baseUrl: config.baseUrl.trim() || DEFAULT_CHATBOT_CONFIG.baseUrl
     }
   });

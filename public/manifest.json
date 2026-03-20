@@ -23,6 +23,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "tabs", "scripting"],
+  "permissions": ["storage", "tabs", "scripting", "identity"],
   "host_permissions": ["http://*/*", "https://*/*"]
 }

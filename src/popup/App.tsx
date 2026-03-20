@@ -32,6 +32,7 @@ import {
   normalizeUrl
 } from '../shared/url';
 import type {
+  AuthStatusResponse,
   ChatbotConfig,
   DemoConfig,
   DemoDraftConfig,
@@ -81,9 +82,9 @@ export default function App() {
   );
   const [chatbotConfig, setChatbotConfig] = useState<ChatbotConfig>({
     agentId: '',
-    token: '',
     baseUrl: 'https://product-api.parcellab.com'
   });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -101,14 +102,15 @@ export default function App() {
 
   async function hydrate(): Promise<void> {
     try {
-      const [[tab], rules, persistedDraft, persistedChatbot] = await Promise.all([
+      const [[tab], rules, persistedDraft, persistedChatbot, authStatus] = await Promise.all([
         chrome.tabs.query({
           active: true,
           currentWindow: true
         }),
         getSavedModifications(),
         getDemoDraftConfig(),
-        getChatbotConfig()
+        getChatbotConfig(),
+        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }) as Promise<AuthStatusResponse>
       ]);
 
       const url = tab?.url ?? '';
@@ -132,6 +134,7 @@ export default function App() {
         setAllRules(rules);
         setDraftConfig(nextDraftConfig);
         setChatbotConfig(persistedChatbot);
+        setIsAuthenticated(authStatus?.authenticated ?? false);
       });
 
       if (!supported) {
@@ -315,6 +318,44 @@ export default function App() {
     busyAction === null &&
     isAuthenticated &&
     chatbotConfig.agentId.trim() !== '';
+
+  async function handleLogin(): Promise<void> {
+    setBusyAction('auth-login');
+    setStatusMessage('Logging in…');
+
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'AUTH_LOGIN'
+      })) as ContentResponse;
+
+      if (!response?.ok) {
+        throw new Error(response?.error ?? 'Login failed.');
+      }
+
+      setIsAuthenticated(true);
+      setStatusMessage('Logged in successfully.');
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Login failed.'
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleLogout(): Promise<void> {
+    setBusyAction('auth-logout');
+
+    try {
+      await chrome.runtime.sendMessage({ type: 'AUTH_LOGOUT' });
+      setIsAuthenticated(false);
+      setStatusMessage('Logged out.');
+    } catch {
+      setStatusMessage('Logout failed.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
 
   async function addChatbot(): Promise<void> {
     if (!activeTab.supported || !activeTab.id) {
@@ -642,47 +683,53 @@ export default function App() {
         </section>
 
         <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Chatbot
-          </h2>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">Agent ID</span>
-            <input
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              placeholder="agent-id"
-              value={chatbotConfig.agentId}
-              onChange={(event) =>
-                updateChatbotConfig((current) => ({
-                  ...current,
-                  agentId: event.target.value
-                }))
-              }
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">
-              Bearer Token (JWT)
-            </span>
-            <textarea
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              rows={2}
-              placeholder="eyJhbGciOi…"
-              value={chatbotConfig.token}
-              onChange={(event) =>
-                updateChatbotConfig((current) => ({
-                  ...current,
-                  token: event.target.value
-                }))
-              }
-            />
-          </label>
-          <button
-            className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-            disabled={!canAddChatbot}
-            onClick={() => void addChatbot()}
-          >
-            {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
-          </button>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Chatbot
+            </h2>
+            {isAuthenticated ? (
+              <button
+                className="text-xs font-medium text-slate-500 transition hover:text-slate-800 disabled:text-slate-300"
+                disabled={busyAction !== null}
+                onClick={() => void handleLogout()}
+              >
+                {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
+              </button>
+            ) : null}
+          </div>
+          {!isAuthenticated ? (
+            <button
+              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+              disabled={isHydrating || busyAction !== null}
+              onClick={() => void handleLogin()}
+            >
+              {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
+            </button>
+          ) : (
+            <>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-slate-500">Agent ID</span>
+                <input
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="agent-id"
+                  value={chatbotConfig.agentId}
+                  onChange={(event) =>
+                    updateChatbotConfig((current) => ({
+                      ...current,
+                      agentId: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canAddChatbot}
+                onClick={() => void addChatbot()}
+              >
+                {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+              </button>
+            </>
+          )}
         </section>
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}

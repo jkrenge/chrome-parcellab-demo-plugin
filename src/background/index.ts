@@ -1,6 +1,8 @@
+import { getValidAccessToken, getStoredTokens, isAuthenticated, login, logout } from '../shared/auth';
 import { getSavedModifications, resolveRuleScopeUrl } from '../shared/storage';
 import { toMatchPattern } from '../shared/url';
 import type {
+  AuthStatusResponse,
   BackgroundRequest,
   ChatbotConfig,
   ChatbotExecuteRequest,
@@ -95,6 +97,47 @@ chrome.runtime.onMessage.addListener(
             ok: false,
             error: error instanceof Error ? error.message : String(error)
           } satisfies ChatbotResponse)
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_LOGIN') {
+      void login()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_LOGOUT') {
+      void logout()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_STATUS') {
+      void getStoredTokens()
+        .then((tokens) =>
+          sendResponse({
+            ok: true,
+            authenticated: isAuthenticated(tokens)
+          } satisfies AuthStatusResponse)
+        )
+        .catch(() =>
+          sendResponse({ ok: true, authenticated: false } satisfies AuthStatusResponse)
         );
 
       return true;
@@ -632,26 +675,35 @@ async function renderSelectionGuide(
 const POLL_INTERVAL_MS = 1000;
 const POLL_MAX_ATTEMPTS = 60;
 
+async function requireAccessToken(): Promise<string> {
+  const token = await getValidAccessToken();
+  if (!token) {
+    throw new Error('Not authenticated. Please log in first.');
+  }
+  return token;
+}
+
 async function handleChatbotExecute(
   request: ChatbotExecuteRequest
 ): Promise<ChatbotResponse> {
   const { query, config, threadId } = request;
 
-  if (!config.agentId || !config.token) {
-    return { ok: false, error: 'Agent ID and token are required.' };
+  if (!config.agentId) {
+    return { ok: false, error: 'Agent ID is required.' };
   }
 
   try {
+    const token = await requireAccessToken();
     let activeThreadId: string;
 
     if (threadId) {
-      await sendFollowUpMessage(config, threadId, query);
+      await sendFollowUpMessage(config, token, threadId, query);
       activeThreadId = threadId;
     } else {
-      activeThreadId = await executeAgent(config, query);
+      activeThreadId = await executeAgent(config, token, query);
     }
 
-    const messages = await pollThread(config, activeThreadId);
+    const messages = await pollThread(config, token, activeThreadId);
     return { ok: true, threadId: activeThreadId, messages };
   } catch (error) {
     return {
@@ -663,13 +715,14 @@ async function handleChatbotExecute(
 
 async function executeAgent(
   config: ChatbotConfig,
+  token: string,
   query: string
 ): Promise<string> {
   const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/execute/`;
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.token}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ query })
@@ -692,6 +745,7 @@ async function executeAgent(
 
 async function sendFollowUpMessage(
   config: ChatbotConfig,
+  token: string,
   threadId: string,
   query: string
 ): Promise<void> {
@@ -699,7 +753,7 @@ async function sendFollowUpMessage(
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${config.token}`,
+      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ query })
@@ -724,13 +778,14 @@ type ThreadResponse = {
 
 async function pollThread(
   config: ChatbotConfig,
+  token: string,
   threadId: string
 ): Promise<ChatMessage[]> {
   for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
     const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/threads/${encodeURIComponent(threadId)}/`;
     const response = await fetch(url, {
       headers: {
-        'Authorization': `Bearer ${config.token}`
+        'Authorization': `Bearer ${token}`
       }
     });
 
