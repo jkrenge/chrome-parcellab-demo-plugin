@@ -28,7 +28,13 @@ type ReplaceState = {
   originalHtml: string;
 };
 
-type AppliedState = HideState | ReplaceState;
+type InsertAfterState = {
+  action: 'insert-after';
+  element: HTMLElement;
+  insertedNode: HTMLElement;
+};
+
+type AppliedState = HideState | ReplaceState | InsertAfterState;
 
 type PickerState = {
   action: ModificationAction;
@@ -219,6 +225,12 @@ function createController(): Controller {
       return;
     }
 
+    const demoConfig = normalizeDemoConfig(rule.demoConfig);
+    if (demoConfig?.kind === 'selection-guide') {
+      renderSelectionGuideRule(element, rule);
+      return;
+    }
+
     const state = appliedStates.get(rule.id);
     if (!state) {
       appliedStates.set(rule.id, {
@@ -228,7 +240,6 @@ function createController(): Controller {
       });
     }
 
-    const demoConfig = normalizeDemoConfig(rule.demoConfig);
     if (demoConfig?.kind === 'track-and-trace') {
       renderTrackAndTraceRule(element, rule);
       return;
@@ -266,6 +277,10 @@ function createController(): Controller {
         );
       } else {
         state.element.style.removeProperty('display');
+      }
+    } else if (state.action === 'insert-after') {
+      if (state.insertedNode.isConnected) {
+        state.insertedNode.remove();
       }
     } else {
       state.element.innerHTML = state.originalHtml;
@@ -622,6 +637,99 @@ function isUniqueSelector(selector: string): boolean {
 
 function escapeAttributeValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function renderSelectionGuideRule(
+  element: HTMLElement,
+  rule: SavedModification
+): void {
+  const demoConfig = normalizeDemoConfig(rule.demoConfig);
+  if (demoConfig?.kind !== 'selection-guide') {
+    return;
+  }
+
+  const containerId = `parcellab-selection-guide-${rule.id}`;
+  const renderKey = `${demoConfig.accountId}:${demoConfig.productId}:${demoConfig.locale}:${demoConfig.appearance}:${demoConfig.density}:${demoConfig.surface}:${demoConfig.notFoundMode}`;
+
+  let container = document.getElementById(containerId);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = containerId;
+    container.dataset.plDemoSgRoot = 'true';
+    container.dataset.plDemoSgKey = renderKey;
+    container.style.position = 'relative';
+    container.style.marginTop = '8px';
+
+    const loadingCopy = document.createElement('div');
+    loadingCopy.dataset.plDemoSgPlaceholder = 'true';
+    loadingCopy.style.padding = '12px 16px';
+    loadingCopy.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+    loadingCopy.style.borderRadius = '12px';
+    loadingCopy.style.background = '#f8fafc';
+    loadingCopy.style.color = '#334155';
+    loadingCopy.style.font = '500 14px/1.5 system-ui, sans-serif';
+    loadingCopy.textContent = 'Loading Selection Guide…';
+    container.appendChild(loadingCopy);
+
+    element.insertAdjacentElement('afterend', container);
+
+    appliedStates.set(rule.id, {
+      action: 'insert-after',
+      element,
+      insertedNode: container
+    });
+  }
+
+  if (
+    container.dataset.plDemoSgKey === renderKey &&
+    (container.dataset.plDemoSgRequested === 'pending' ||
+      container.dataset.plDemoSgRequested === 'running' ||
+      container.dataset.plDemoSgRendered === 'true')
+  ) {
+    return;
+  }
+
+  container.dataset.plDemoSgKey = renderKey;
+  container.dataset.plDemoSgRequested = 'pending';
+  container.dataset.plDemoSgRendered = 'false';
+
+  void chrome.runtime
+    .sendMessage({
+      type: 'RENDER_SELECTION_GUIDE',
+      containerId,
+      demoConfig
+    })
+    .then((response?: ContentResponse) => {
+      const liveContainer = document.getElementById(containerId);
+      if (!liveContainer) {
+        return;
+      }
+
+      if (!response?.ok) {
+        liveContainer.dataset.plDemoSgRequested = 'false';
+        liveContainer.dataset.plDemoSgRendered = 'false';
+        showPluginError(
+          liveContainer,
+          response?.error ?? 'Selection Guide failed to render.',
+          'pl-demo-sg-error'
+        );
+      }
+    })
+    .catch((error: unknown) => {
+      const liveContainer = document.getElementById(containerId);
+      if (liveContainer) {
+        liveContainer.dataset.plDemoSgRequested = 'false';
+        liveContainer.dataset.plDemoSgRendered = 'false';
+        showPluginError(
+          liveContainer,
+          error instanceof Error
+            ? error.message
+            : 'Selection Guide failed to render.',
+          'pl-demo-sg-error'
+        );
+      }
+    });
 }
 
 function renderTrackAndTraceRule(

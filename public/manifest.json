@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "parcelLab Demo Layer",
   "description": "Hide elements or replace their contents on demo pages, then reapply those changes automatically on revisit.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "action": {
     "default_popup": "popup.html",
     "default_title": "parcelLab Demo Layer",

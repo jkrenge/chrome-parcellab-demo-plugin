@@ -8,6 +8,11 @@ import {
   LANGUAGE_OPTIONS,
   mergeDemoConfigIntoDraft,
   normalizeDemoDraftConfig,
+  SELECTION_GUIDE_APPEARANCE_OPTIONS,
+  SELECTION_GUIDE_DENSITY_OPTIONS,
+  SELECTION_GUIDE_NOT_FOUND_OPTIONS,
+  SELECTION_GUIDE_SAMPLES,
+  SELECTION_GUIDE_SURFACE_OPTIONS,
   validateDemoDraftConfig
 } from '../shared/demo';
 import {
@@ -15,7 +20,8 @@ import {
   getSavedModifications,
   removeModifications,
   resolveRuleScopeUrl,
-  saveDemoDraftConfig
+  saveDemoDraftConfig,
+  saveModification
 } from '../shared/storage';
 import {
   compactUrl,
@@ -30,6 +36,10 @@ import type {
   ContentResponse,
   ModificationAction,
   SavedModification,
+  SelectionGuideAppearance,
+  SelectionGuideDensity,
+  SelectionGuideNotFoundMode,
+  SelectionGuideSurface,
   SupportedLanguage
 } from '../shared/types';
 
@@ -231,16 +241,66 @@ export default function App() {
     setDraftConfig((current) => {
       const next = normalizeDemoDraftConfig(update(current));
       void saveDemoDraftConfig(next);
+
+      if (next.plugin === 'selection-guide') {
+        void refreshSelectionGuideRules(next);
+      }
+
       return next;
     });
   }
 
+  async function refreshSelectionGuideRules(
+    draft: DemoDraftConfig
+  ): Promise<void> {
+    const selectionGuideRules = allRules.filter(
+      (rule) =>
+        rule.demoConfig?.kind === 'selection-guide' &&
+        resolveRuleScopeUrl(rule) === activeTab.normalizedScopeUrl
+    );
+
+    if (selectionGuideRules.length === 0 || !activeTab.id) {
+      return;
+    }
+
+    const newConfig = buildDemoConfigFromDraft(draft);
+    const updatedRules: SavedModification[] = [];
+
+    for (const rule of selectionGuideRules) {
+      const updated = { ...rule, demoConfig: newConfig };
+      await saveModification(updated);
+      updatedRules.push(updated);
+    }
+
+    setAllRules((current) =>
+      current.map((rule) => {
+        const updated = updatedRules.find((u) => u.id === rule.id);
+        return updated ?? rule;
+      })
+    );
+
+    try {
+      await chrome.tabs.sendMessage(activeTab.id, {
+        type: 'RESTORE_RULES',
+        ruleIds: selectionGuideRules.map((r) => r.id)
+      });
+    } catch {
+      // Content script may not be loaded.
+    }
+  }
+
   const accountIdLabel =
-    draftConfig.plugin === 'track-and-trace' ? 'User ID' : 'Account Name';
+    draftConfig.plugin === 'track-and-trace'
+      ? 'User ID'
+      : draftConfig.plugin === 'selection-guide'
+        ? 'Account ID'
+        : 'Account Name';
   const accountIdPlaceholder =
     draftConfig.plugin === 'track-and-trace'
       ? '1612197'
-      : 'parcellab-account-name';
+      : draftConfig.plugin === 'selection-guide'
+        ? '1617954'
+        : 'parcellab-account-name';
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-900">
@@ -298,49 +358,204 @@ export default function App() {
           </label>
         </section>
 
-        <section
-          className={`grid gap-3 ${
-            draftConfig.plugin === 'returns-portal' ? 'grid-cols-2' : 'grid-cols-1'
-          }`}
-        >
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">
-              {accountIdLabel}
-            </span>
-            <input
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              inputMode={draftConfig.plugin === 'track-and-trace' ? 'numeric' : 'text'}
-              maxLength={draftConfig.plugin === 'track-and-trace' ? 7 : undefined}
-              placeholder={accountIdPlaceholder}
-              value={draftConfig.accountId}
-              onChange={(event) =>
-                updateDraftConfig((current) => ({
-                  ...current,
-                  accountId:
-                    current.plugin === 'track-and-trace'
-                      ? event.target.value.replace(/\D+/g, '').slice(0, 7)
-                      : event.target.value
-                }))
-              }
-            />
-          </label>
-          {draftConfig.plugin === 'returns-portal' ? (
+        {draftConfig.plugin !== 'selection-guide' ? (
+          <section
+            className={`grid gap-3 ${
+              draftConfig.plugin === 'returns-portal' ? 'grid-cols-2' : 'grid-cols-1'
+            }`}
+          >
             <label className="space-y-1.5">
-              <span className="text-xs font-medium text-slate-500">Portal Code</span>
+              <span className="text-xs font-medium text-slate-500">
+                {accountIdLabel}
+              </span>
               <input
                 className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                placeholder="xt-de"
-                value={draftConfig.portalCode}
+                inputMode={draftConfig.plugin === 'track-and-trace' ? 'numeric' : 'text'}
+                maxLength={draftConfig.plugin === 'track-and-trace' ? 7 : undefined}
+                placeholder={accountIdPlaceholder}
+                value={draftConfig.accountId}
                 onChange={(event) =>
                   updateDraftConfig((current) => ({
                     ...current,
-                    portalCode: event.target.value.trimStart()
+                    accountId:
+                      current.plugin === 'track-and-trace'
+                        ? event.target.value.replace(/\D+/g, '').slice(0, 7)
+                        : event.target.value
                   }))
                 }
               />
             </label>
-          ) : null}
-        </section>
+            {draftConfig.plugin === 'returns-portal' ? (
+              <label className="space-y-1.5">
+                <span className="text-xs font-medium text-slate-500">Portal Code</span>
+                <input
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="xt-de"
+                  value={draftConfig.portalCode}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      portalCode: event.target.value.trimStart()
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
+          </section>
+        ) : null}
+
+        {draftConfig.plugin === 'selection-guide' ? (
+          <>
+            <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Account ID
+                  </span>
+                  <input
+                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="1617954"
+                    value={draftConfig.accountId}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        accountId: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Product ID
+                  </span>
+                  <input
+                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Men's Iver Pants (tailored fit)"
+                    value={draftConfig.productId}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        productId: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <div className="flex gap-2">
+                {SELECTION_GUIDE_SAMPLES.map((sample) => (
+                  <button
+                    key={sample.productId}
+                    className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
+                    onClick={() =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        accountId: sample.accountId,
+                        productId: sample.productId
+                      }))
+                    }
+                  >
+                    {sample.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Appearance</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.selectionGuideAppearance}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        selectionGuideAppearance: event.target
+                          .value as SelectionGuideAppearance
+                      }))
+                    }
+                  >
+                    {SELECTION_GUIDE_APPEARANCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Density</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.selectionGuideDensity}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        selectionGuideDensity: event.target
+                          .value as SelectionGuideDensity
+                      }))
+                    }
+                  >
+                    {SELECTION_GUIDE_DENSITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Surface</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.selectionGuideSurface}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        selectionGuideSurface: event.target
+                          .value as SelectionGuideSurface
+                      }))
+                    }
+                  >
+                    {SELECTION_GUIDE_SURFACE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Not Found</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.selectionGuideNotFoundMode}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        selectionGuideNotFoundMode: event.target
+                          .value as SelectionGuideNotFoundMode
+                      }))
+                    }
+                  >
+                    {SELECTION_GUIDE_NOT_FOUND_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+            </section>
+          </>
+        ) : null}
 
         <section>
           <div className="grid grid-cols-2 gap-3">
@@ -560,6 +775,10 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
     return 'Tracking';
   }
 
+  if (rule.demoConfig?.kind === 'selection-guide') {
+    return 'Size Guide';
+  }
+
   return 'Replace';
 }
 
@@ -591,6 +810,25 @@ function SelectChevron() {
       viewBox="0 0 20 20"
       stroke="currentColor"
       strokeWidth="1.8"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="m5 7 5 5 5-5"
+      />
+    </svg>
+  );
+}
+
+function SelectChevronSmall() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500"
+      fill="none"
+      viewBox="0 0 20 20"
+      stroke="currentColor"
+      strokeWidth="2"
     >
       <path
         strokeLinecap="round"

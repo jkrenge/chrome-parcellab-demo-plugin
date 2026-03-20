@@ -3,6 +3,7 @@ import { toMatchPattern } from '../shared/url';
 import type {
   BackgroundRequest,
   ReturnsPortalConfig,
+  SelectionGuideConfig,
   TrackAndTraceConfig
 } from '../shared/types';
 
@@ -33,6 +34,23 @@ chrome.runtime.onMessage.addListener(
 
     if (message?.type === 'RENDER_TRACK_AND_TRACE' && sender.tab?.id) {
       void renderTrackAndTrace(
+        sender.tab.id,
+        message.containerId,
+        message.demoConfig
+      )
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'RENDER_SELECTION_GUIDE' && sender.tab?.id) {
+      void renderSelectionGuide(
         sender.tab.id,
         message.containerId,
         message.demoConfig
@@ -425,5 +443,172 @@ async function renderReturnsPortal(
 
   if (!result?.ok) {
     throw new Error(result?.error ?? 'Returns Portal render failed.');
+  }
+}
+
+async function renderSelectionGuide(
+  tabId: number,
+  containerId: string,
+  demoConfig: SelectionGuideConfig
+): Promise<void> {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [containerId, demoConfig] as [string, SelectionGuideConfig],
+    func: (
+      targetContainerId: string,
+      config: SelectionGuideConfig
+    ) => {
+      const SCRIPT_ID = 'pl-demo-selection-guide-script';
+      const SCRIPT_SRC =
+        'https://parcellab.github.io/selection-guide-ui/dist/size-recommender.iife.js';
+
+      type SelectionGuideWindow = Window & {
+        __plDemoSelectionGuideLoaderPromise__?: Promise<void>;
+        SizeRecommender?: {
+          init: (options: {
+            target: string | HTMLElement;
+            accountId: number | string;
+            productId?: string;
+            locale?: string;
+            appearance?: string;
+            density?: string;
+            surface?: string;
+            notFoundMode?: string;
+          }) => { update: (options: Record<string, unknown>) => void; destroy: () => void };
+        };
+      };
+
+      const scopedWindow = window as SelectionGuideWindow;
+      const container = document.getElementById(targetContainerId);
+      if (!container) {
+        return { ok: false, error: 'Selection Guide container not found.' };
+      }
+
+      const showContainerError = (message: string) => {
+        container.dataset.plDemoSgRequested = 'false';
+        container.dataset.plDemoSgRendered = 'false';
+
+        const wrapper = document.createElement('div');
+        wrapper.style.margin = '24px auto';
+        wrapper.style.maxWidth = '560px';
+        wrapper.style.padding = '16px 18px';
+        wrapper.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+        wrapper.style.borderRadius = '12px';
+        wrapper.style.background = '#fef2f2';
+        wrapper.style.color = '#991b1b';
+        wrapper.style.font = '500 14px/1.5 system-ui, sans-serif';
+        wrapper.textContent = message;
+        container.replaceChildren(wrapper);
+      };
+
+      const renderKey = `${config.accountId}:${config.productId}:${config.locale}:${config.appearance}:${config.density}:${config.surface}:${config.notFoundMode}`;
+      if (
+        container.dataset.plDemoSgKey === renderKey &&
+        container.dataset.plDemoSgRendered === 'true'
+      ) {
+        return { ok: true };
+      }
+
+      container.dataset.plDemoSgKey = renderKey;
+      container.dataset.plDemoSgRequested = 'running';
+      container.dataset.plDemoSgRendered = 'false';
+
+      const ensureScript = async () => {
+        if (typeof scopedWindow.SizeRecommender?.init === 'function') {
+          return;
+        }
+
+        if (scopedWindow.__plDemoSelectionGuideLoaderPromise__) {
+          return scopedWindow.__plDemoSelectionGuideLoaderPromise__;
+        }
+
+        scopedWindow.__plDemoSelectionGuideLoaderPromise__ = new Promise<void>(
+          (resolve, reject) => {
+            const existingScript = document.getElementById(
+              SCRIPT_ID
+            ) as HTMLScriptElement | null;
+
+            if (existingScript) {
+              if (existingScript.dataset.plDemoLoaded === 'true') {
+                resolve();
+                return;
+              }
+
+              existingScript.addEventListener('load', () => resolve(), {
+                once: true
+              });
+              existingScript.addEventListener(
+                'error',
+                () => reject(new Error('Could not load Selection Guide script.')),
+                { once: true }
+              );
+              return;
+            }
+
+            const scriptTag = document.createElement('script');
+            scriptTag.id = SCRIPT_ID;
+            scriptTag.async = true;
+            scriptTag.src = SCRIPT_SRC;
+            scriptTag.onload = () => {
+              scriptTag.dataset.plDemoLoaded = 'true';
+              resolve();
+            };
+            scriptTag.onerror = () =>
+              reject(new Error('Could not load Selection Guide script.'));
+            document.head.appendChild(scriptTag);
+          }
+        );
+
+        return scopedWindow.__plDemoSelectionGuideLoaderPromise__.catch((error) => {
+          scopedWindow.__plDemoSelectionGuideLoaderPromise__ = undefined;
+          throw error;
+        });
+      };
+
+      void ensureScript()
+        .then(() => {
+          const liveContainer = document.getElementById(targetContainerId);
+          if (!liveContainer) {
+            return;
+          }
+
+          if (typeof scopedWindow.SizeRecommender?.init !== 'function') {
+            showContainerError(
+              'Selection Guide did not expose SizeRecommender.init().'
+            );
+            return;
+          }
+
+          liveContainer.replaceChildren();
+
+          scopedWindow.SizeRecommender.init({
+            target: liveContainer,
+            accountId: config.accountId,
+            productId: config.productId || undefined,
+            locale: config.locale,
+            appearance: config.appearance,
+            density: config.density,
+            surface: config.surface,
+            notFoundMode: config.notFoundMode
+          });
+
+          liveContainer.dataset.plDemoSgRequested = 'true';
+          liveContainer.dataset.plDemoSgRendered = 'true';
+        })
+        .catch((error: unknown) => {
+          showContainerError(
+            error instanceof Error
+              ? error.message
+              : 'Selection Guide failed to render.'
+          );
+        });
+
+      return { ok: true };
+    }
+  });
+
+  if (!result?.ok) {
+    throw new Error(result?.error ?? 'Selection Guide render failed.');
   }
 }

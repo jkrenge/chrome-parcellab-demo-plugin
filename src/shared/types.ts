@@ -1,5 +1,10 @@
 export type ModificationAction = 'hide' | 'replace';
-export type DemoPluginKind = 'track-and-trace' | 'returns-portal';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide';
+
+export type SelectionGuideAppearance = 'neutral' | 'colored';
+export type SelectionGuideDensity = 'compact' | 'comfortable';
+export type SelectionGuideSurface = 'subtle' | 'plain';
+export type SelectionGuideNotFoundMode = 'empty' | 'true-to-size';
 
 export type SupportedLanguage =
   | 'en'
@@ -24,7 +29,18 @@ export type ReturnsPortalConfig = {
   lang: SupportedLanguage;
 };
 
-export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig;
+export type SelectionGuideConfig = {
+  kind: 'selection-guide';
+  accountId: string;
+  productId: string;
+  locale: SupportedLanguage;
+  appearance: SelectionGuideAppearance;
+  density: SelectionGuideDensity;
+  surface: SelectionGuideSurface;
+  notFoundMode: SelectionGuideNotFoundMode;
+};
+
+export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig;
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;
@@ -32,6 +48,11 @@ export type DemoDraftConfig = {
   lang: SupportedLanguage;
   portalCode: string;
   showArticleList: boolean;
+  productId: string;
+  selectionGuideAppearance: SelectionGuideAppearance;
+  selectionGuideDensity: SelectionGuideDensity;
+  selectionGuideSurface: SelectionGuideSurface;
+  selectionGuideNotFoundMode: SelectionGuideNotFoundMode;
 };
 
 export type SavedModification = {
@@ -72,4 +93,9 @@ export type BackgroundRequest =
       type: 'RENDER_RETURNS_PORTAL';
       containerId: string;
       demoConfig: ReturnsPortalConfig;
+    }
+  | {
+      type: 'RENDER_SELECTION_GUIDE';
+      containerId: string;
+      demoConfig: SelectionGuideConfig;
     };
