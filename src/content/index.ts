@@ -14,6 +14,7 @@ import type {
   SavedModification,
   TrackAndTraceConfig
 } from '../shared/types';
+import { injectChatbot, removeChatbot } from './chatbot';
 
 type HideState = {
   action: 'hide';
@@ -104,6 +105,12 @@ function createController(): Controller {
       case 'RESTORE_RULES':
         restoreRules(message.ruleIds);
         await applyRulesForCurrentUrl();
+        return { ok: true };
+      case 'INJECT_CHATBOT':
+        injectChatbot(message.config);
+        return { ok: true };
+      case 'REMOVE_CHATBOT':
+        removeChatbot();
         return { ok: true };
       default:
         return { ok: false, error: 'Unsupported request' };

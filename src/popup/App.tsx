@@ -16,10 +16,12 @@ import {
   validateDemoDraftConfig
 } from '../shared/demo';
 import {
+  getChatbotConfig,
   getDemoDraftConfig,
   getSavedModifications,
   removeModifications,
   resolveRuleScopeUrl,
+  saveChatbotConfig,
   saveDemoDraftConfig,
   saveModification
 } from '../shared/storage';
@@ -30,6 +32,7 @@ import {
   normalizeUrl
 } from '../shared/url';
 import type {
+  ChatbotConfig,
   DemoConfig,
   DemoDraftConfig,
   DemoPluginKind,
@@ -76,6 +79,11 @@ export default function App() {
   const [draftConfig, setDraftConfig] = useState<DemoDraftConfig>(
     DEFAULT_DEMO_DRAFT_CONFIG
   );
+  const [chatbotConfig, setChatbotConfig] = useState<ChatbotConfig>({
+    agentId: '',
+    token: '',
+    baseUrl: 'https://product-api.parcellab.com'
+  });
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -93,13 +101,14 @@ export default function App() {
 
   async function hydrate(): Promise<void> {
     try {
-      const [[tab], rules, persistedDraft] = await Promise.all([
+      const [[tab], rules, persistedDraft, persistedChatbot] = await Promise.all([
         chrome.tabs.query({
           active: true,
           currentWindow: true
         }),
         getSavedModifications(),
-        getDemoDraftConfig()
+        getDemoDraftConfig(),
+        getChatbotConfig()
       ]);
 
       const url = tab?.url ?? '';
@@ -122,6 +131,7 @@ export default function App() {
         });
         setAllRules(rules);
         setDraftConfig(nextDraftConfig);
+        setChatbotConfig(persistedChatbot);
       });
 
       if (!supported) {
@@ -286,6 +296,59 @@ export default function App() {
       });
     } catch {
       // Content script may not be loaded.
+    }
+  }
+
+  function updateChatbotConfig(
+    update: (current: ChatbotConfig) => ChatbotConfig
+  ): void {
+    setChatbotConfig((current) => {
+      const next = update(current);
+      void saveChatbotConfig(next);
+      return next;
+    });
+  }
+
+  const canAddChatbot =
+    !isHydrating &&
+    activeTab.supported &&
+    busyAction === null &&
+    isAuthenticated &&
+    chatbotConfig.agentId.trim() !== '';
+
+  async function addChatbot(): Promise<void> {
+    if (!activeTab.supported || !activeTab.id) {
+      setStatusMessage('This page does not support the chatbot.');
+      return;
+    }
+
+    if (!chatbotConfig.agentId.trim()) {
+      setStatusMessage('Agent ID is required.');
+      return;
+    }
+
+    setBusyAction('add-chatbot');
+    setStatusMessage('Injecting chatbot…');
+
+    try {
+      await ensureInjected(activeTab.id);
+      const response = (await chrome.tabs.sendMessage(activeTab.id, {
+        type: 'INJECT_CHATBOT',
+        config: chatbotConfig
+      })) as ContentResponse;
+
+      if (!response?.ok) {
+        throw new Error(response?.error ?? 'Could not inject chatbot.');
+      }
+
+      setStatusMessage('Chatbot added to page.');
+      window.close();
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Could not inject chatbot.'
+      );
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -576,6 +639,50 @@ export default function App() {
               {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
             </button>
           </div>
+        </section>
+
+        <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Chatbot
+          </h2>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">Agent ID</span>
+            <input
+              className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              placeholder="agent-id"
+              value={chatbotConfig.agentId}
+              onChange={(event) =>
+                updateChatbotConfig((current) => ({
+                  ...current,
+                  agentId: event.target.value
+                }))
+              }
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">
+              Bearer Token (JWT)
+            </span>
+            <textarea
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              rows={2}
+              placeholder="eyJhbGciOi…"
+              value={chatbotConfig.token}
+              onChange={(event) =>
+                updateChatbotConfig((current) => ({
+                  ...current,
+                  token: event.target.value
+                }))
+              }
+            />
+          </label>
+          <button
+            className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+            disabled={!canAddChatbot}
+            onClick={() => void addChatbot()}
+          >
+            {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+          </button>
         </section>
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}

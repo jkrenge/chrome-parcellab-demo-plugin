@@ -76,10 +76,36 @@ export type ContentRequest =
       html: string;
       demoConfig?: DemoConfig;
     }
-  | { type: 'RESTORE_RULES'; ruleIds: string[] };
+  | { type: 'RESTORE_RULES'; ruleIds: string[] }
+  | { type: 'INJECT_CHATBOT'; config: ChatbotConfig }
+  | { type: 'REMOVE_CHATBOT' };
 
 export type ContentResponse =
   | { ok: true }
+  | { ok: false; error: string };
+
+export type ChatbotConfig = {
+  agentId: string;
+  token: string;
+  baseUrl: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+};
+
+export type ChatbotExecuteRequest = {
+  type: 'CHATBOT_EXECUTE';
+  query: string;
+  config: ChatbotConfig;
+  threadId?: string;
+};
+
+export type ChatbotResponse =
+  | { ok: true; threadId: string; messages: ChatMessage[] }
   | { ok: false; error: string };
 
 export type BackgroundRequest =
@@ -98,4 +124,8 @@ export type BackgroundRequest =
       type: 'RENDER_SELECTION_GUIDE';
       containerId: string;
       demoConfig: SelectionGuideConfig;
-    };
+    }
+  | ChatbotExecuteRequest
+  | { type: 'AUTH_LOGIN' }
+  | { type: 'AUTH_LOGOUT' }
+  | { type: 'AUTH_STATUS' };
