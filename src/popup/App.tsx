@@ -382,6 +382,32 @@ export default function App() {
         throw new Error(response?.error ?? 'Could not inject chatbot.');
       }
 
+      const rule: SavedModification = {
+        id: crypto.randomUUID(),
+        url: activeTab.normalizedUrl,
+        scopeUrl: activeTab.normalizedScopeUrl,
+        pageTitle: activeTab.title || new URL(activeTab.url).hostname,
+        selector: 'body',
+        action: 'replace',
+        html: '',
+        demoConfig: {
+          kind: 'chatbot',
+          agentId: chatbotConfig.agentId.trim(),
+          baseUrl: chatbotConfig.baseUrl
+        },
+        summary: 'Chatbot widget',
+        createdAt: new Date().toISOString()
+      };
+
+      const updatedRules = await saveModification(rule);
+      setAllRules(updatedRules);
+
+      try {
+        await chrome.runtime.sendMessage({ type: 'SYNC_RULES' });
+      } catch {
+        // Storage is already updated locally.
+      }
+
       setStatusMessage('Chatbot added to page.');
       window.close();
     } catch (error) {
@@ -689,25 +715,27 @@ export default function App() {
               <>
                 <label className="block space-y-1.5">
                   <span className="text-xs font-medium text-slate-500">Agent ID</span>
-                  <input
-                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    placeholder="agent-id"
-                    value={chatbotConfig.agentId}
-                    onChange={(event) =>
-                      updateChatbotConfig((current) => ({
-                        ...current,
-                        agentId: event.target.value
-                      }))
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      placeholder="58e65ace-932b-4f9d-…"
+                      value={chatbotConfig.agentId}
+                      onChange={(event) =>
+                        updateChatbotConfig((current) => ({
+                          ...current,
+                          agentId: event.target.value
+                        }))
+                      }
+                    />
+                    <button
+                      className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                      disabled={!canAddChatbot}
+                      onClick={() => void addChatbot()}
+                    >
+                      {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+                    </button>
+                  </div>
                 </label>
-                <button
-                  className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-                  disabled={!canAddChatbot}
-                  onClick={() => void addChatbot()}
-                >
-                  {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
-                </button>
               </>
             )}
           </section>
@@ -933,6 +961,10 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
 
   if (rule.demoConfig?.kind === 'selection-guide') {
     return 'Size Guide';
+  }
+
+  if (rule.demoConfig?.kind === 'chatbot') {
+    return 'Chatbot';
   }
 
   return 'Replace';

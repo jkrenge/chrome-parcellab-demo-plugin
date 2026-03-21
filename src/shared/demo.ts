@@ -1,4 +1,5 @@
 import type {
+  ChatbotDemoConfig,
   DemoConfig,
   DemoDraftConfig,
   DemoPluginKind,
@@ -135,6 +136,15 @@ export function normalizeDemoConfig(
     } satisfies SelectionGuideConfig;
   }
 
+  if ('kind' in value && value.kind === 'chatbot') {
+    const cb = value as ChatbotDemoConfig;
+    return {
+      kind: 'chatbot',
+      agentId: cb.agentId,
+      baseUrl: cb.baseUrl
+    } satisfies ChatbotDemoConfig;
+  }
+
   if ('kind' in value && value.kind === 'track-and-trace') {
     return {
       kind: 'track-and-trace',
@@ -255,6 +265,13 @@ export function mergeDemoConfigIntoDraft(
     };
   }
 
+  if (config.kind === 'chatbot') {
+    return {
+      ...draft,
+      plugin: 'chatbot'
+    };
+  }
+
   return {
     ...draft,
     plugin: 'track-and-trace',
@@ -315,6 +332,10 @@ export function formatDemoConfigSummary(value?: DemoConfig): string | undefined 
   if (config.kind === 'selection-guide') {
     const product = config.productId || 'no product';
     return `Selection Guide · ${config.accountId} · ${product}`;
+  }
+
+  if (config.kind === 'chatbot') {
+    return `Chatbot · ${config.agentId}`;
   }
 
   return `Track & Trace · ${config.userId} · ${formatLanguageLabel(config.lang)}`;

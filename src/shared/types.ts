@@ -40,7 +40,13 @@ export type SelectionGuideConfig = {
   notFoundMode: SelectionGuideNotFoundMode;
 };
 
-export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig;
+export type ChatbotDemoConfig = {
+  kind: 'chatbot';
+  agentId: string;
+  baseUrl: string;
+};
+
+export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig | ChatbotDemoConfig;
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;

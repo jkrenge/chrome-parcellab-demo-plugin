@@ -233,6 +233,11 @@ function createController(): Controller {
     }
 
     const demoConfig = normalizeDemoConfig(rule.demoConfig);
+    if (demoConfig?.kind === 'chatbot') {
+      injectChatbot({ agentId: demoConfig.agentId, baseUrl: demoConfig.baseUrl });
+      return;
+    }
+
     if (demoConfig?.kind === 'selection-guide') {
       renderSelectionGuideRule(element, rule);
       return;
