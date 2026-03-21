@@ -215,8 +215,22 @@ function buildChatWindow(): HTMLElement {
   return win;
 }
 
+function isExtensionContextValid(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
 async function sendMessage(query: string): Promise<void> {
   if (!currentConfig) return;
+
+  if (!isExtensionContextValid()) {
+    errorMessage = 'Extension was reloaded. Please refresh the page.';
+    render();
+    return;
+  }
 
   messages.push({
     id: crypto.randomUUID(),

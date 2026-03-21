@@ -60,6 +60,14 @@ const TOOLTIP_ID = 'pl-demo-picker-tooltip';
 const INTERNAL_PREFIX = 'pl-demo-picker-';
 const appliedStates = new Map<string, AppliedState>();
 
+function isExtensionContextValid(): boolean {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
 if (!window.__PL_DEMO_CONTROLLER__) {
   window.__PL_DEMO_CONTROLLER__ = createController();
   void window.__PL_DEMO_CONTROLLER__.init();
@@ -123,12 +131,19 @@ function createController(): Controller {
     }
 
     observer = new MutationObserver(() => {
+      if (!isExtensionContextValid()) {
+        observer?.disconnect();
+        return;
+      }
+
       if (applyTimer) {
         window.clearTimeout(applyTimer);
       }
 
       applyTimer = window.setTimeout(() => {
-        void applyRulesForCurrentUrl();
+        if (isExtensionContextValid()) {
+          void applyRulesForCurrentUrl();
+        }
       }, 120);
     });
 
@@ -152,6 +167,8 @@ function createController(): Controller {
     hasInstalledNavigationHooks = true;
 
     const onLocationChange = () => {
+      if (!isExtensionContextValid()) return;
+
       const currentScopeUrl = normalizeCurrentScopeUrl();
       if (currentScopeUrl === lastKnownScopeUrl) {
         return;
@@ -182,6 +199,8 @@ function createController(): Controller {
   }
 
   async function applyRulesForCurrentUrl(): Promise<void> {
+    if (!isExtensionContextValid()) return;
+
     const normalizedScopeUrl = normalizeCurrentScopeUrl();
     if (!normalizedScopeUrl) {
       return;
@@ -354,7 +373,7 @@ function createController(): Controller {
   }
 
   async function handleClick(event: MouseEvent): Promise<void> {
-    if (!pickerState) {
+    if (!pickerState || !isExtensionContextValid()) {
       return;
     }
 
