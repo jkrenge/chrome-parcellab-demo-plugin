@@ -164,7 +164,9 @@ export function normalizeDemoDraftConfig(
       ? 'returns-portal'
       : value?.plugin === 'selection-guide'
         ? 'selection-guide'
-        : 'track-and-trace';
+        : value?.plugin === 'chatbot'
+          ? 'chatbot'
+          : 'track-and-trace';
 
   return {
     plugin,
