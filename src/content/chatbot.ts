@@ -111,7 +111,32 @@ function buildChatWindow(): HTMLElement {
   if (messages.length === 0 && !isLoading && !errorMessage) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'Ask a question to get started.';
+
+    const greeting = document.createElement('p');
+    greeting.className = 'empty-greeting';
+    greeting.textContent = 'How can I help you today?';
+    empty.appendChild(greeting);
+
+    const suggestions = document.createElement('div');
+    suggestions.className = 'suggestions';
+
+    const prompts = [
+      'Where is my order?',
+      'I want to return an item',
+      'My package is damaged'
+    ];
+
+    for (const prompt of prompts) {
+      const chip = document.createElement('button');
+      chip.className = 'suggestion-chip';
+      chip.textContent = prompt;
+      chip.addEventListener('click', () => {
+        void sendMessage(prompt);
+      });
+      suggestions.appendChild(chip);
+    }
+
+    empty.appendChild(suggestions);
     messageList.appendChild(empty);
   }
 
@@ -357,12 +382,54 @@ function getStyles(): string {
 
     .empty-state {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 16px;
       height: 100%;
       min-height: 200px;
       color: #94a3b8;
       font-size: 13px;
+    }
+
+    .empty-greeting {
+      font-size: 15px;
+      font-weight: 500;
+      color: #64748b;
+    }
+
+    .suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+      max-width: 260px;
+    }
+
+    .suggestion-chip {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: white;
+      color: #334155;
+      font-size: 13px;
+      font-family: inherit;
+      line-height: 1.4;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .suggestion-chip:hover {
+      border-color: #3D3AD3;
+      background: #f5f5ff;
+      color: #3D3AD3;
+    }
+
+    .suggestion-chip:active {
+      background: #eeeeff;
     }
 
     .message {
