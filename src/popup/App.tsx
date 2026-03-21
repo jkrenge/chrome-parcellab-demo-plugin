@@ -661,76 +661,78 @@ export default function App() {
           </>
         ) : null}
 
-        <section>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-              disabled={!canStartReplaceSelection}
-              onClick={() => void beginSelection('replace')}
-            >
-              {busyAction === 'replace-selection'
-                ? 'Starting…'
-                : 'Pick Demo Content Element'}
-            </button>
-            <button
-              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-              disabled={isHydrating || !activeTab.supported || busyAction !== null}
-              onClick={() => void beginSelection('hide')}
-            >
-              {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
-            </button>
-          </div>
-        </section>
-
-        <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Chatbot
-            </h2>
-            {isAuthenticated ? (
+        {draftConfig.plugin === 'chatbot' ? (
+          <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Chatbot
+              </h2>
+              {isAuthenticated ? (
+                <button
+                  className="text-xs font-medium text-slate-500 transition hover:text-slate-800 disabled:text-slate-300"
+                  disabled={busyAction !== null}
+                  onClick={() => void handleLogout()}
+                >
+                  {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
+                </button>
+              ) : null}
+            </div>
+            {!isAuthenticated ? (
               <button
-                className="text-xs font-medium text-slate-500 transition hover:text-slate-800 disabled:text-slate-300"
-                disabled={busyAction !== null}
-                onClick={() => void handleLogout()}
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || busyAction !== null}
+                onClick={() => void handleLogin()}
               >
-                {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
+                {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
               </button>
-            ) : null}
-          </div>
-          {!isAuthenticated ? (
-            <button
-              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-              disabled={isHydrating || busyAction !== null}
-              onClick={() => void handleLogin()}
-            >
-              {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
-            </button>
-          ) : (
-            <>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-slate-500">Agent ID</span>
-                <input
-                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  placeholder="agent-id"
-                  value={chatbotConfig.agentId}
-                  onChange={(event) =>
-                    updateChatbotConfig((current) => ({
-                      ...current,
-                      agentId: event.target.value
-                    }))
-                  }
-                />
-              </label>
+            ) : (
+              <>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-slate-500">Agent ID</span>
+                  <input
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="agent-id"
+                    value={chatbotConfig.agentId}
+                    onChange={(event) =>
+                      updateChatbotConfig((current) => ({
+                        ...current,
+                        agentId: event.target.value
+                      }))
+                    }
+                  />
+                </label>
+                <button
+                  className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                  disabled={!canAddChatbot}
+                  onClick={() => void addChatbot()}
+                >
+                  {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+                </button>
+              </>
+            )}
+          </section>
+        ) : (
+          <section>
+            <div className="grid grid-cols-2 gap-3">
               <button
                 className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-                disabled={!canAddChatbot}
-                onClick={() => void addChatbot()}
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
               >
-                {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+                {busyAction === 'replace-selection'
+                  ? 'Starting…'
+                  : 'Pick Demo Content Element'}
               </button>
-            </>
-          )}
-        </section>
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
+              </button>
+            </div>
+          </section>
+        )}
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}
 

@@ -37,7 +37,8 @@ export const DEMO_PLUGIN_OPTIONS: Array<{
 }> = [
   { label: 'Track & Trace', value: 'track-and-trace' },
   { label: 'Returns Portal', value: 'returns-portal' },
-  { label: 'Selection Guide', value: 'selection-guide' }
+  { label: 'Selection Guide', value: 'selection-guide' },
+  { label: 'Chatbot', value: 'chatbot' }
 ];
 
 export const SELECTION_GUIDE_APPEARANCE_OPTIONS: Array<{
@@ -281,6 +282,10 @@ export function validateDemoDraftConfig(
       return 'Enter a parcelLab account ID.';
     }
 
+    return undefined;
+  }
+
+  if (draft.plugin === 'chatbot') {
     return undefined;
   }
 

@@ -1,5 +1,5 @@
 export type ModificationAction = 'hide' | 'replace';
-export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot';
 
 export type SelectionGuideAppearance = 'neutral' | 'colored';
 export type SelectionGuideDensity = 'compact' | 'comfortable';
