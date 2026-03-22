@@ -1,7 +1,13 @@
+import { getValidAccessToken, getStoredTokens, isAuthenticated, login, logout } from '../shared/auth';
 import { getSavedModifications, resolveRuleScopeUrl } from '../shared/storage';
 import { toMatchPattern } from '../shared/url';
 import type {
+  AuthStatusResponse,
   BackgroundRequest,
+  ChatbotConfig,
+  ChatbotExecuteRequest,
+  ChatbotResponse,
+  ChatMessage,
   ReturnsPortalConfig,
   SelectionGuideConfig,
   TrackAndTraceConfig
@@ -78,6 +84,60 @@ chrome.runtime.onMessage.addListener(
             ok: false,
             error: error instanceof Error ? error.message : String(error)
           })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'CHATBOT_EXECUTE') {
+      void handleChatbotExecute(message)
+        .then((response) => sendResponse(response))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          } satisfies ChatbotResponse)
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_LOGIN') {
+      void login()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_LOGOUT') {
+      void logout()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'AUTH_STATUS') {
+      void getStoredTokens()
+        .then((tokens) =>
+          sendResponse({
+            ok: true,
+            authenticated: isAuthenticated(tokens)
+          } satisfies AuthStatusResponse)
+        )
+        .catch(() =>
+          sendResponse({ ok: true, authenticated: false } satisfies AuthStatusResponse)
         );
 
       return true;
@@ -611,4 +671,176 @@ async function renderSelectionGuide(
   if (!result?.ok) {
     throw new Error(result?.error ?? 'Selection Guide render failed.');
   }
+}
+const POLL_INTERVAL_MS = 1000;
+const POLL_MAX_ATTEMPTS = 60;
+
+async function requireAccessToken(): Promise<string> {
+  const token = await getValidAccessToken();
+  if (!token) {
+    throw new Error('Not authenticated. Please log in first.');
+  }
+  return token;
+}
+
+async function handleChatbotExecute(
+  request: ChatbotExecuteRequest
+): Promise<ChatbotResponse> {
+  const { query, config, threadId } = request;
+
+  if (!config.agentId) {
+    return { ok: false, error: 'Agent ID is required.' };
+  }
+
+  try {
+    const token = await requireAccessToken();
+    let activeThreadId: string;
+
+    if (threadId) {
+      await sendFollowUpMessage(config, token, threadId, query);
+      activeThreadId = threadId;
+    } else {
+      activeThreadId = await executeAgent(config, token, query);
+    }
+
+    const messages = await pollThread(config, token, activeThreadId);
+    return { ok: true, threadId: activeThreadId, messages };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Chatbot request failed.'
+    };
+  }
+}
+
+async function executeAgent(
+  config: ChatbotConfig,
+  token: string,
+  query: string
+): Promise<string> {
+  const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/execute/`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ query })
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Agent execute failed (${response.status}): ${text || response.statusText}`);
+  }
+
+  const data = await response.json() as { threadId?: string; thread_id?: string };
+  const threadId = data.threadId ?? data.thread_id;
+
+  if (!threadId) {
+    throw new Error('No threadId returned from execute endpoint.');
+  }
+
+  return threadId;
+}
+
+async function sendFollowUpMessage(
+  config: ChatbotConfig,
+  token: string,
+  threadId: string,
+  query: string
+): Promise<void> {
+  const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/threads/${encodeURIComponent(threadId)}/messages/`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ query })
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Follow-up message failed (${response.status}): ${text || response.statusText}`);
+  }
+}
+
+type ThreadResponse = {
+  executionStatus?: string;
+  execution_status?: string;
+  messages?: Array<{
+    id?: string;
+    role?: string;
+    content?: string;
+    created_at?: string;
+  }>;
+};
+
+async function pollThread(
+  config: ChatbotConfig,
+  token: string,
+  threadId: string
+): Promise<ChatMessage[]> {
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+    const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/threads/${encodeURIComponent(threadId)}/`;
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Thread poll failed (${response.status}): ${text || response.statusText}`);
+    }
+
+    const data = (await response.json()) as ThreadResponse;
+    const status = data.executionStatus ?? data.execution_status ?? '';
+
+    if (status === 'completed' || status === 'complete') {
+      return extractMessages(data);
+    }
+
+    if (status === 'failed' || status === 'error') {
+      const errorMsg = extractLastAssistantContent(data);
+      throw new Error(errorMsg || 'Agent execution failed.');
+    }
+
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  throw new Error('Agent execution timed out after 60 seconds.');
+}
+
+function extractMessages(data: ThreadResponse): ChatMessage[] {
+  if (!Array.isArray(data.messages)) {
+    return [];
+  }
+
+  return data.messages
+    .filter(
+      (msg): msg is typeof msg & { role: string; content: string } =>
+        typeof msg.role === 'string' && typeof msg.content === 'string'
+    )
+    .map((msg) => ({
+      id: msg.id ?? crypto.randomUUID(),
+      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+      content: msg.content,
+      timestamp: msg.created_at ?? new Date().toISOString()
+    }));
+}
+
+function extractLastAssistantContent(data: ThreadResponse): string {
+  if (!Array.isArray(data.messages)) {
+    return '';
+  }
+
+  const assistantMessages = data.messages.filter(
+    (msg) => msg.role === 'assistant' && typeof msg.content === 'string'
+  );
+  return assistantMessages[assistantMessages.length - 1]?.content ?? '';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

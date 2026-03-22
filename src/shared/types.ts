@@ -1,5 +1,5 @@
 export type ModificationAction = 'hide' | 'replace';
-export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot';
 
 export type SelectionGuideAppearance = 'neutral' | 'colored';
 export type SelectionGuideDensity = 'compact' | 'comfortable';
@@ -40,7 +40,13 @@ export type SelectionGuideConfig = {
   notFoundMode: SelectionGuideNotFoundMode;
 };
 
-export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig;
+export type ChatbotDemoConfig = {
+  kind: 'chatbot';
+  agentId: string;
+  baseUrl: string;
+};
+
+export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig | ChatbotDemoConfig;
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;
@@ -76,11 +82,41 @@ export type ContentRequest =
       html: string;
       demoConfig?: DemoConfig;
     }
-  | { type: 'RESTORE_RULES'; ruleIds: string[] };
+  | { type: 'RESTORE_RULES'; ruleIds: string[] }
+  | { type: 'INJECT_CHATBOT'; config: ChatbotConfig }
+  | { type: 'REMOVE_CHATBOT' };
 
 export type ContentResponse =
   | { ok: true }
   | { ok: false; error: string };
+
+export type ChatbotConfig = {
+  agentId: string;
+  baseUrl: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+};
+
+export type ChatbotExecuteRequest = {
+  type: 'CHATBOT_EXECUTE';
+  query: string;
+  config: ChatbotConfig;
+  threadId?: string;
+};
+
+export type ChatbotResponse =
+  | { ok: true; threadId: string; messages: ChatMessage[] }
+  | { ok: false; error: string };
+
+export type AuthStatusResponse = {
+  ok: true;
+  authenticated: boolean;
+};
 
 export type BackgroundRequest =
   | { type: 'SYNC_RULES' }
@@ -98,4 +134,8 @@ export type BackgroundRequest =
       type: 'RENDER_SELECTION_GUIDE';
       containerId: string;
       demoConfig: SelectionGuideConfig;
-    };
+    }
+  | ChatbotExecuteRequest
+  | { type: 'AUTH_LOGIN' }
+  | { type: 'AUTH_LOGOUT' }
+  | { type: 'AUTH_STATUS' };

@@ -65,6 +65,36 @@ Load the unpacked extension from `dist/` in Chrome:
 
 The extension saves rules to the exact page URL except for the hash fragment.
 
+## Chatbot
+
+The extension can inject a floating chatbot widget into any page. The chatbot communicates with the parcelLab v4 Agents API.
+
+### Setup
+
+1. Open the extension popup.
+2. In the **Chatbot** section, enter your **Agent ID** and **Bearer Token** (JWT).
+3. Click **Add Chatbot** to inject the widget into the active tab.
+
+### Required config
+
+| Field | Description |
+|-------|-------------|
+| Agent ID | The parcelLab agent identifier to converse with |
+| Bearer Token | A valid JWT for authenticating against the Product API |
+
+The base URL defaults to `https://product-api.parcellab.com`.
+
+### How it works
+
+1. User sends a message in the chat widget.
+2. The content script forwards the query to the background service worker.
+3. The background worker calls `POST /v4/agents/{agent_id}/execute/` to start an async execution.
+4. The background worker polls `GET /v4/agents/{agent_id}/threads/{thread_ref}/` every 1s (up to 60s) until the agent completes.
+5. The response messages are rendered in the chat widget.
+6. Follow-up messages use `POST /v4/agents/{agent_id}/threads/{thread_ref}/messages/` on the existing thread.
+
+The widget uses a Shadow DOM for style isolation and sits fixed in the bottom-right corner with `z-index: 2147483647`.
+
 ## Notes
 
 - Replace rules overwrite `innerHTML` of the selected container.

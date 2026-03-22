@@ -1,4 +1,5 @@
 import type {
+  ChatbotDemoConfig,
   DemoConfig,
   DemoDraftConfig,
   DemoPluginKind,
@@ -37,7 +38,8 @@ export const DEMO_PLUGIN_OPTIONS: Array<{
 }> = [
   { label: 'Track & Trace', value: 'track-and-trace' },
   { label: 'Returns Portal', value: 'returns-portal' },
-  { label: 'Selection Guide', value: 'selection-guide' }
+  { label: 'Selection Guide', value: 'selection-guide' },
+  { label: 'Chatbot', value: 'chatbot' }
 ];
 
 export const SELECTION_GUIDE_APPEARANCE_OPTIONS: Array<{
@@ -134,6 +136,15 @@ export function normalizeDemoConfig(
     } satisfies SelectionGuideConfig;
   }
 
+  if ('kind' in value && value.kind === 'chatbot') {
+    const cb = value as ChatbotDemoConfig;
+    return {
+      kind: 'chatbot',
+      agentId: cb.agentId,
+      baseUrl: cb.baseUrl
+    } satisfies ChatbotDemoConfig;
+  }
+
   if ('kind' in value && value.kind === 'track-and-trace') {
     return {
       kind: 'track-and-trace',
@@ -163,7 +174,9 @@ export function normalizeDemoDraftConfig(
       ? 'returns-portal'
       : value?.plugin === 'selection-guide'
         ? 'selection-guide'
-        : 'track-and-trace';
+        : value?.plugin === 'chatbot'
+          ? 'chatbot'
+          : 'track-and-trace';
 
   return {
     plugin,
@@ -252,6 +265,13 @@ export function mergeDemoConfigIntoDraft(
     };
   }
 
+  if (config.kind === 'chatbot') {
+    return {
+      ...draft,
+      plugin: 'chatbot'
+    };
+  }
+
   return {
     ...draft,
     plugin: 'track-and-trace',
@@ -284,6 +304,10 @@ export function validateDemoDraftConfig(
     return undefined;
   }
 
+  if (draft.plugin === 'chatbot') {
+    return undefined;
+  }
+
   if (!/^\d{1,7}$/.test(draft.accountId.trim())) {
     return 'Enter a numeric parcelLab user ID with up to 7 digits.';
   }
@@ -308,6 +332,10 @@ export function formatDemoConfigSummary(value?: DemoConfig): string | undefined 
   if (config.kind === 'selection-guide') {
     const product = config.productId || 'no product';
     return `Selection Guide · ${config.accountId} · ${product}`;
+  }
+
+  if (config.kind === 'chatbot') {
+    return `Chatbot · ${config.agentId}`;
   }
 
   return `Track & Trace · ${config.userId} · ${formatLanguageLabel(config.lang)}`;

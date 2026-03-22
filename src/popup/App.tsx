@@ -16,10 +16,12 @@ import {
   validateDemoDraftConfig
 } from '../shared/demo';
 import {
+  getChatbotConfig,
   getDemoDraftConfig,
   getSavedModifications,
   removeModifications,
   resolveRuleScopeUrl,
+  saveChatbotConfig,
   saveDemoDraftConfig,
   saveModification
 } from '../shared/storage';
@@ -30,6 +32,8 @@ import {
   normalizeUrl
 } from '../shared/url';
 import type {
+  AuthStatusResponse,
+  ChatbotConfig,
   DemoConfig,
   DemoDraftConfig,
   DemoPluginKind,
@@ -76,6 +80,11 @@ export default function App() {
   const [draftConfig, setDraftConfig] = useState<DemoDraftConfig>(
     DEFAULT_DEMO_DRAFT_CONFIG
   );
+  const [chatbotConfig, setChatbotConfig] = useState<ChatbotConfig>({
+    agentId: '',
+    baseUrl: 'https://product-api.parcellab.com'
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -93,13 +102,15 @@ export default function App() {
 
   async function hydrate(): Promise<void> {
     try {
-      const [[tab], rules, persistedDraft] = await Promise.all([
+      const [[tab], rules, persistedDraft, persistedChatbot, authStatus] = await Promise.all([
         chrome.tabs.query({
           active: true,
           currentWindow: true
         }),
         getSavedModifications(),
-        getDemoDraftConfig()
+        getDemoDraftConfig(),
+        getChatbotConfig(),
+        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }) as Promise<AuthStatusResponse>
       ]);
 
       const url = tab?.url ?? '';
@@ -122,6 +133,8 @@ export default function App() {
         });
         setAllRules(rules);
         setDraftConfig(nextDraftConfig);
+        setChatbotConfig(persistedChatbot);
+        setIsAuthenticated(authStatus?.authenticated ?? false);
       });
 
       if (!supported) {
@@ -286,6 +299,123 @@ export default function App() {
       });
     } catch {
       // Content script may not be loaded.
+    }
+  }
+
+  function updateChatbotConfig(
+    update: (current: ChatbotConfig) => ChatbotConfig
+  ): void {
+    setChatbotConfig((current) => {
+      const next = update(current);
+      void saveChatbotConfig(next);
+      return next;
+    });
+  }
+
+  const canAddChatbot =
+    !isHydrating &&
+    activeTab.supported &&
+    busyAction === null &&
+    isAuthenticated &&
+    chatbotConfig.agentId.trim() !== '';
+
+  async function handleLogin(): Promise<void> {
+    setBusyAction('auth-login');
+    setStatusMessage('Logging in…');
+
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'AUTH_LOGIN'
+      })) as ContentResponse;
+
+      if (!response?.ok) {
+        throw new Error(response?.error ?? 'Login failed.');
+      }
+
+      setIsAuthenticated(true);
+      setStatusMessage('Logged in successfully.');
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Login failed.'
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleLogout(): Promise<void> {
+    setBusyAction('auth-logout');
+
+    try {
+      await chrome.runtime.sendMessage({ type: 'AUTH_LOGOUT' });
+      setIsAuthenticated(false);
+      setStatusMessage('Logged out.');
+    } catch {
+      setStatusMessage('Logout failed.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function addChatbot(): Promise<void> {
+    if (!activeTab.supported || !activeTab.id) {
+      setStatusMessage('This page does not support the chatbot.');
+      return;
+    }
+
+    if (!chatbotConfig.agentId.trim()) {
+      setStatusMessage('Agent ID is required.');
+      return;
+    }
+
+    setBusyAction('add-chatbot');
+    setStatusMessage('Injecting chatbot…');
+
+    try {
+      await ensureInjected(activeTab.id);
+      const response = (await chrome.tabs.sendMessage(activeTab.id, {
+        type: 'INJECT_CHATBOT',
+        config: chatbotConfig
+      })) as ContentResponse;
+
+      if (!response?.ok) {
+        throw new Error(response?.error ?? 'Could not inject chatbot.');
+      }
+
+      const rule: SavedModification = {
+        id: crypto.randomUUID(),
+        url: activeTab.normalizedUrl,
+        scopeUrl: activeTab.normalizedScopeUrl,
+        pageTitle: activeTab.title || new URL(activeTab.url).hostname,
+        selector: 'body',
+        action: 'replace',
+        html: '',
+        demoConfig: {
+          kind: 'chatbot',
+          agentId: chatbotConfig.agentId.trim(),
+          baseUrl: chatbotConfig.baseUrl
+        },
+        summary: 'Chatbot widget',
+        createdAt: new Date().toISOString()
+      };
+
+      const updatedRules = await saveModification(rule);
+      setAllRules(updatedRules);
+
+      try {
+        await chrome.runtime.sendMessage({ type: 'SYNC_RULES' });
+      } catch {
+        // Storage is already updated locally.
+      }
+
+      setStatusMessage('Chatbot added to page.');
+      window.close();
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Could not inject chatbot.'
+      );
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -557,26 +687,80 @@ export default function App() {
           </>
         ) : null}
 
-        <section>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-              disabled={!canStartReplaceSelection}
-              onClick={() => void beginSelection('replace')}
-            >
-              {busyAction === 'replace-selection'
-                ? 'Starting…'
-                : 'Pick Demo Content Element'}
-            </button>
-            <button
-              className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-              disabled={isHydrating || !activeTab.supported || busyAction !== null}
-              onClick={() => void beginSelection('hide')}
-            >
-              {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
-            </button>
-          </div>
-        </section>
+        {draftConfig.plugin === 'chatbot' ? (
+          <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Chatbot
+              </h2>
+              {isAuthenticated ? (
+                <button
+                  className="text-xs font-medium text-slate-500 transition hover:text-slate-800 disabled:text-slate-300"
+                  disabled={busyAction !== null}
+                  onClick={() => void handleLogout()}
+                >
+                  {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
+                </button>
+              ) : null}
+            </div>
+            {!isAuthenticated ? (
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || busyAction !== null}
+                onClick={() => void handleLogin()}
+              >
+                {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
+              </button>
+            ) : (
+              <>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-slate-500">Agent ID</span>
+                  <div className="flex gap-2">
+                    <input
+                      className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      placeholder="58e65ace-932b-4f9d-…"
+                      value={chatbotConfig.agentId}
+                      onChange={(event) =>
+                        updateChatbotConfig((current) => ({
+                          ...current,
+                          agentId: event.target.value
+                        }))
+                      }
+                    />
+                    <button
+                      className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                      disabled={!canAddChatbot}
+                      onClick={() => void addChatbot()}
+                    >
+                      {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+                    </button>
+                  </div>
+                </label>
+              </>
+            )}
+          </section>
+        ) : (
+          <section>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection'
+                  ? 'Starting…'
+                  : 'Pick Demo Content Element'}
+              </button>
+              <button
+                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
+              </button>
+            </div>
+          </section>
+        )}
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}
 
@@ -777,6 +961,10 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
 
   if (rule.demoConfig?.kind === 'selection-guide') {
     return 'Size Guide';
+  }
+
+  if (rule.demoConfig?.kind === 'chatbot') {
+    return 'Chatbot';
   }
 
   return 'Replace';

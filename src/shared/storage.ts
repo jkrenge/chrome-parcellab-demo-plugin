@@ -1,13 +1,20 @@
 import { normalizeDemoConfig, normalizeDemoDraftConfig } from './demo';
-import type { DemoDraftConfig, SavedModification } from './types';
+import type { ChatbotConfig, DemoDraftConfig, SavedModification } from './types';
 import { normalizeScopeUrl } from './url';
 
 const MODIFICATIONS_KEY = 'savedModifications';
 const DEMO_DRAFT_KEY = 'demoDraftConfig';
+const CHATBOT_CONFIG_KEY = 'chatbotConfig';
+
+const DEFAULT_CHATBOT_CONFIG: ChatbotConfig = {
+  agentId: '',
+  baseUrl: 'https://product-api.parcellab.com'
+};
 
 type StoredShape = {
   savedModifications?: SavedModification[];
   demoDraftConfig?: DemoDraftConfig;
+  chatbotConfig?: ChatbotConfig;
 };
 
 export async function getSavedModifications(): Promise<SavedModification[]> {
@@ -64,6 +71,27 @@ export function resolveRuleScopeUrl(rule: SavedModification): string {
 
 function sortNewestFirst(a: SavedModification, b: SavedModification): number {
   return b.createdAt.localeCompare(a.createdAt);
+}
+
+export async function getChatbotConfig(): Promise<ChatbotConfig> {
+  const result = (await chrome.storage.local.get(
+    CHATBOT_CONFIG_KEY
+  )) as StoredShape;
+
+  return result.chatbotConfig
+    ? { ...DEFAULT_CHATBOT_CONFIG, ...result.chatbotConfig }
+    : { ...DEFAULT_CHATBOT_CONFIG };
+}
+
+export async function saveChatbotConfig(
+  config: ChatbotConfig
+): Promise<void> {
+  await chrome.storage.local.set({
+    [CHATBOT_CONFIG_KEY]: {
+      agentId: config.agentId.trim(),
+      baseUrl: config.baseUrl.trim() || DEFAULT_CHATBOT_CONFIG.baseUrl
+    }
+  });
 }
 
 function normalizeSavedModification(rule: SavedModification): SavedModification {

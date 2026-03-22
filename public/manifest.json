@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2qFQbYabGpcAyzeP1p2P9NigdpfFz1ace2issoEHxeTov8QKNQBslPxZjFkKGEyy7AnkazxYrwHjmxFKXueRHdCChCUX/I4sv9CScax5JaCMSFHqw6hUg/5/4tMSwyjihvoNtPBjj3/UudfYSvTphiUAmE/tARe0uwJpsRt6HLFLZ8HTgHQy5Z5JJlwiHNRXEPftF8V8++hrxprgZgI7c/OzzBvbgAFwy9G4fpM9sxnT951BzPWcdMOJPVupJr6Y4eDfuau8EcNkJKW85CgfsNCL/5kMmXLuGvgu8elcnceg4diFvb849bvRNgU34ZfYlSMRsvSBozYimhK5HL8E/wIDAQAB",
   "name": "parcelLab Demo Layer",
   "description": "Hide elements or replace their contents on demo pages, then reapply those changes automatically on revisit.",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "action": {
     "default_popup": "popup.html",
     "default_title": "parcelLab Demo Layer",
@@ -23,6 +24,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "tabs", "scripting"],
+  "permissions": ["storage", "tabs", "scripting", "identity"],
   "host_permissions": ["http://*/*", "https://*/*"]
 }
