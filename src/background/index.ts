@@ -562,7 +562,7 @@ async function renderSelectionGuide(
         container.replaceChildren(wrapper);
       };
 
-      const renderKey = `${config.accountId}:${config.productId}:${config.locale}:${config.appearance}:${config.density}:${config.surface}:${config.notFoundMode}`;
+      const renderKey = `${config.accountId}:${config.productId}:${config.locale}:${config.appearance}:${config.density}:${config.surface}:${config.notFoundMode}:${config.marginTop ?? 0}:${config.marginBottom ?? 0}`;
       if (
         container.dataset.plDemoSgKey === renderKey &&
         container.dataset.plDemoSgRendered === 'true'
@@ -672,9 +672,6 @@ async function renderSelectionGuide(
     throw new Error(result?.error ?? 'Selection Guide render failed.');
   }
 }
-const POLL_INTERVAL_MS = 1000;
-const POLL_MAX_ATTEMPTS = 60;
-
 async function requireAccessToken(): Promise<string> {
   const token = await getValidAccessToken();
   if (!token) {
@@ -694,16 +691,16 @@ async function handleChatbotExecute(
 
   try {
     const token = await requireAccessToken();
-    let activeThreadId: string;
+    let data: V3ThreadResponse;
 
     if (threadId) {
-      await sendFollowUpMessage(config, token, threadId, query);
-      activeThreadId = threadId;
+      data = await sendFollowUp(config, token, threadId, query);
     } else {
-      activeThreadId = await executeAgent(config, token, query);
+      data = await createThread(config, token, query);
     }
 
-    const messages = await pollThread(config, token, activeThreadId);
+    const activeThreadId = String(data.id);
+    const messages = extractV3Messages(data);
     return { ok: true, threadId: activeThreadId, messages };
   } catch (error) {
     return {
@@ -713,134 +710,103 @@ async function handleChatbotExecute(
   }
 }
 
-async function executeAgent(
+type V3Message = {
+  id?: string;
+  type: string;
+  query?: string;
+  text?: string;
+  response?: string;
+  data?: { answer?: string };
+};
+
+type V3ThreadResponse = {
+  id: number;
+  executionStatus?: string;
+  messages?: V3Message[];
+};
+
+async function createThread(
   config: ChatbotConfig,
   token: string,
   query: string
-): Promise<string> {
-  const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/execute/`;
+): Promise<V3ThreadResponse> {
+  const url = `${config.baseUrl}/v3/agents/simple-agent-threads/`;
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ query })
+    body: JSON.stringify({
+      account: config.account,
+      agent: config.agentId,
+      query,
+      context: {}
+    })
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`Agent execute failed (${response.status}): ${text || response.statusText}`);
+    throw new Error(`Create thread failed (${response.status}): ${text || response.statusText}`);
   }
 
-  const data = await response.json() as { threadId?: string; thread_id?: string };
-  const threadId = data.threadId ?? data.thread_id;
-
-  if (!threadId) {
-    throw new Error('No threadId returned from execute endpoint.');
-  }
-
-  return threadId;
+  return (await response.json()) as V3ThreadResponse;
 }
 
-async function sendFollowUpMessage(
+async function sendFollowUp(
   config: ChatbotConfig,
   token: string,
   threadId: string,
   query: string
-): Promise<void> {
-  const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/threads/${encodeURIComponent(threadId)}/messages/`;
+): Promise<V3ThreadResponse> {
+  const url = `${config.baseUrl}/v3/agents/simple-agent-threads/${encodeURIComponent(threadId)}/`;
   const response = await fetch(url, {
-    method: 'POST',
+    method: 'PATCH',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ query })
+    body: JSON.stringify({
+      query,
+      context: {}
+    })
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     throw new Error(`Follow-up message failed (${response.status}): ${text || response.statusText}`);
   }
+
+  return (await response.json()) as V3ThreadResponse;
 }
 
-type ThreadResponse = {
-  executionStatus?: string;
-  execution_status?: string;
-  messages?: Array<{
-    id?: string;
-    role?: string;
-    content?: string;
-    created_at?: string;
-  }>;
-};
-
-async function pollThread(
-  config: ChatbotConfig,
-  token: string,
-  threadId: string
-): Promise<ChatMessage[]> {
-  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-    const url = `${config.baseUrl}/v4/agents/${encodeURIComponent(config.agentId)}/threads/${encodeURIComponent(threadId)}/`;
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Thread poll failed (${response.status}): ${text || response.statusText}`);
-    }
-
-    const data = (await response.json()) as ThreadResponse;
-    const status = data.executionStatus ?? data.execution_status ?? '';
-
-    if (status === 'completed' || status === 'complete') {
-      return extractMessages(data);
-    }
-
-    if (status === 'failed' || status === 'error') {
-      const errorMsg = extractLastAssistantContent(data);
-      throw new Error(errorMsg || 'Agent execution failed.');
-    }
-
-    await sleep(POLL_INTERVAL_MS);
-  }
-
-  throw new Error('Agent execution timed out after 60 seconds.');
-}
-
-function extractMessages(data: ThreadResponse): ChatMessage[] {
+function extractV3Messages(data: V3ThreadResponse): ChatMessage[] {
   if (!Array.isArray(data.messages)) {
     return [];
   }
 
-  return data.messages
-    .filter(
-      (msg): msg is typeof msg & { role: string; content: string } =>
-        typeof msg.role === 'string' && typeof msg.content === 'string'
-    )
-    .map((msg) => ({
-      id: msg.id ?? crypto.randomUUID(),
-      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
-      content: msg.content,
-      timestamp: msg.created_at ?? new Date().toISOString()
-    }));
-}
+  const result: ChatMessage[] = [];
 
-function extractLastAssistantContent(data: ThreadResponse): string {
-  if (!Array.isArray(data.messages)) {
-    return '';
+  for (const msg of data.messages) {
+    if (msg.type === 'input_message' && typeof msg.query === 'string') {
+      result.push({
+        id: msg.id ?? crypto.randomUUID(),
+        role: 'user',
+        content: msg.query,
+        timestamp: new Date().toISOString()
+      });
+    } else if (msg.type === 'response') {
+      const content = msg.response ?? msg.data?.answer ?? '';
+      if (content) {
+        result.push({
+          id: msg.id ?? crypto.randomUUID(),
+          role: 'assistant',
+          content,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
   }
 
-  const assistantMessages = data.messages.filter(
-    (msg) => msg.role === 'assistant' && typeof msg.content === 'string'
-  );
-  return assistantMessages[assistantMessages.length - 1]?.content ?? '';
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return result;
 }

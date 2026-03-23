@@ -10,6 +10,7 @@ import type {
   SelectionGuideNotFoundMode,
   SelectionGuideSurface,
   SupportedLanguage,
+  TextReplaceConfig,
   TrackAndTraceConfig
 } from './types';
 
@@ -29,7 +30,10 @@ export const DEFAULT_DEMO_DRAFT_CONFIG: DemoDraftConfig = {
   selectionGuideAppearance: 'neutral',
   selectionGuideDensity: 'compact',
   selectionGuideSurface: 'subtle',
-  selectionGuideNotFoundMode: 'true-to-size'
+  selectionGuideNotFoundMode: 'true-to-size',
+  selectionGuideMarginTop: 0,
+  selectionGuideMarginBottom: 0,
+  textReplaceText: ''
 };
 
 export const DEMO_PLUGIN_OPTIONS: Array<{
@@ -39,7 +43,8 @@ export const DEMO_PLUGIN_OPTIONS: Array<{
   { label: 'Track & Trace', value: 'track-and-trace' },
   { label: 'Returns Portal', value: 'returns-portal' },
   { label: 'Selection Guide', value: 'selection-guide' },
-  { label: 'Chatbot', value: 'chatbot' }
+  { label: 'Chatbot', value: 'chatbot' },
+  { label: 'Text Replace', value: 'text-replace' }
 ];
 
 export const SELECTION_GUIDE_APPEARANCE_OPTIONS: Array<{
@@ -82,14 +87,24 @@ export type SelectionGuideSample = {
 
 export const SELECTION_GUIDE_SAMPLES: SelectionGuideSample[] = [
   {
-    label: 'Pants (tailored fit)',
+    label: 'Pants (tailored)',
     accountId: '1617954',
     productId: "Men's Iver Pants (tailored fit)"
   },
   {
-    label: 'Oxford Shirt',
+    label: 'Shirt',
+    accountId: '1619013',
+    productId: '6792154579016'
+  },
+  {
+    label: 'Pants (large)',
     accountId: '1617954',
-    productId: "Men's Classic Oxford Shirt"
+    productId: "Men's Pro 3L 3.0 Pants"
+  },
+  {
+    label: 'Pants (small)',
+    accountId: '1617954',
+    productId: "Men's Iver 5-Pocket Pants"
   }
 ];
 
@@ -132,7 +147,9 @@ export function normalizeDemoConfig(
       appearance: sg.appearance ?? 'neutral',
       density: sg.density ?? 'compact',
       surface: sg.surface ?? 'subtle',
-      notFoundMode: sg.notFoundMode ?? 'true-to-size'
+      notFoundMode: sg.notFoundMode ?? 'true-to-size',
+      marginTop: sg.marginTop ?? 0,
+      marginBottom: sg.marginBottom ?? 0
     } satisfies SelectionGuideConfig;
   }
 
@@ -141,6 +158,7 @@ export function normalizeDemoConfig(
     return {
       kind: 'chatbot',
       agentId: cb.agentId,
+      account: cb.account ?? 1619884,
       baseUrl: cb.baseUrl
     } satisfies ChatbotDemoConfig;
   }
@@ -152,6 +170,14 @@ export function normalizeDemoConfig(
       lang: value.lang,
       showArticleList: value.showArticleList
     } satisfies TrackAndTraceConfig;
+  }
+
+  if ('kind' in value && value.kind === 'text-replace') {
+    const tr = value as TextReplaceConfig;
+    return {
+      kind: 'text-replace',
+      text: tr.text ?? ''
+    } satisfies TextReplaceConfig;
   }
 
   if ('userId' in value) {
@@ -176,7 +202,9 @@ export function normalizeDemoDraftConfig(
         ? 'selection-guide'
         : value?.plugin === 'chatbot'
           ? 'chatbot'
-          : 'track-and-trace';
+          : value?.plugin === 'text-replace'
+            ? 'text-replace'
+            : 'track-and-trace';
 
   return {
     plugin,
@@ -195,7 +223,12 @@ export function normalizeDemoDraftConfig(
     selectionGuideSurface:
       value?.selectionGuideSurface === 'plain' ? 'plain' : 'subtle',
     selectionGuideNotFoundMode:
-      value?.selectionGuideNotFoundMode === 'empty' ? 'empty' : 'true-to-size'
+      value?.selectionGuideNotFoundMode === 'empty' ? 'empty' : 'true-to-size',
+    selectionGuideMarginTop:
+      typeof value?.selectionGuideMarginTop === 'number' ? value.selectionGuideMarginTop : 0,
+    selectionGuideMarginBottom:
+      typeof value?.selectionGuideMarginBottom === 'number' ? value.selectionGuideMarginBottom : 0,
+    textReplaceText: typeof value?.textReplaceText === 'string' ? value.textReplaceText : ''
   };
 }
 
@@ -220,7 +253,16 @@ export function buildDemoConfigFromDraft(
       appearance: draft.selectionGuideAppearance,
       density: draft.selectionGuideDensity,
       surface: draft.selectionGuideSurface,
-      notFoundMode: draft.selectionGuideNotFoundMode
+      notFoundMode: draft.selectionGuideNotFoundMode,
+      marginTop: draft.selectionGuideMarginTop,
+      marginBottom: draft.selectionGuideMarginBottom
+    };
+  }
+
+  if (draft.plugin === 'text-replace') {
+    return {
+      kind: 'text-replace',
+      text: draft.textReplaceText
     };
   }
 
@@ -261,7 +303,9 @@ export function mergeDemoConfigIntoDraft(
       selectionGuideAppearance: config.appearance,
       selectionGuideDensity: config.density,
       selectionGuideSurface: config.surface,
-      selectionGuideNotFoundMode: config.notFoundMode
+      selectionGuideNotFoundMode: config.notFoundMode,
+      selectionGuideMarginTop: config.marginTop,
+      selectionGuideMarginBottom: config.marginBottom
     };
   }
 
@@ -269,6 +313,14 @@ export function mergeDemoConfigIntoDraft(
     return {
       ...draft,
       plugin: 'chatbot'
+    };
+  }
+
+  if (config.kind === 'text-replace') {
+    return {
+      ...draft,
+      plugin: 'text-replace',
+      textReplaceText: config.text
     };
   }
 
@@ -308,6 +360,13 @@ export function validateDemoDraftConfig(
     return undefined;
   }
 
+  if (draft.plugin === 'text-replace') {
+    if (!draft.textReplaceText.trim()) {
+      return 'Enter the replacement text.';
+    }
+    return undefined;
+  }
+
   if (!/^\d{1,7}$/.test(draft.accountId.trim())) {
     return 'Enter a numeric parcelLab user ID with up to 7 digits.';
   }
@@ -336,6 +395,11 @@ export function formatDemoConfigSummary(value?: DemoConfig): string | undefined 
 
   if (config.kind === 'chatbot') {
     return `Chatbot · ${config.agentId}`;
+  }
+
+  if (config.kind === 'text-replace') {
+    const preview = config.text.length > 40 ? `${config.text.slice(0, 40)}…` : config.text;
+    return `Text Replace · "${preview}"`;
   }
 
   return `Track & Trace · ${config.userId} · ${formatLanguageLabel(config.lang)}`;

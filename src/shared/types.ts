@@ -1,5 +1,5 @@
 export type ModificationAction = 'hide' | 'replace';
-export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot' | 'text-replace';
 
 export type SelectionGuideAppearance = 'neutral' | 'colored';
 export type SelectionGuideDensity = 'compact' | 'comfortable';
@@ -38,15 +38,23 @@ export type SelectionGuideConfig = {
   density: SelectionGuideDensity;
   surface: SelectionGuideSurface;
   notFoundMode: SelectionGuideNotFoundMode;
+  marginTop: number;
+  marginBottom: number;
 };
 
 export type ChatbotDemoConfig = {
   kind: 'chatbot';
   agentId: string;
+  account: number;
   baseUrl: string;
 };
 
-export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig | ChatbotDemoConfig;
+export type TextReplaceConfig = {
+  kind: 'text-replace';
+  text: string;
+};
+
+export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig | ChatbotDemoConfig | TextReplaceConfig;
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;
@@ -59,6 +67,9 @@ export type DemoDraftConfig = {
   selectionGuideDensity: SelectionGuideDensity;
   selectionGuideSurface: SelectionGuideSurface;
   selectionGuideNotFoundMode: SelectionGuideNotFoundMode;
+  selectionGuideMarginTop: number;
+  selectionGuideMarginBottom: number;
+  textReplaceText: string;
 };
 
 export type SavedModification = {
@@ -92,6 +103,7 @@ export type ContentResponse =
 
 export type ChatbotConfig = {
   agentId: string;
+  account: number;
   baseUrl: string;
 };
 

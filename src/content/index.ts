@@ -29,13 +29,19 @@ type ReplaceState = {
   originalHtml: string;
 };
 
+type TextReplaceState = {
+  action: 'text-replace';
+  element: HTMLElement;
+  originalText: string;
+};
+
 type InsertAfterState = {
   action: 'insert-after';
   element: HTMLElement;
   insertedNode: HTMLElement;
 };
 
-type AppliedState = HideState | ReplaceState | InsertAfterState;
+type AppliedState = HideState | ReplaceState | TextReplaceState | InsertAfterState;
 
 type PickerState = {
   action: ModificationAction;
@@ -233,7 +239,14 @@ function createController(): Controller {
     const currentState = appliedStates.get(rule.id);
 
     if (currentState && currentState.element !== element) {
-      restoreRule(rule.id);
+      if (
+        currentState.action === 'insert-after' &&
+        currentState.insertedNode.isConnected
+      ) {
+        currentState.element = element;
+      } else {
+        restoreRule(rule.id);
+      }
     }
 
     if (rule.action === 'hide') {
@@ -253,7 +266,7 @@ function createController(): Controller {
 
     const demoConfig = normalizeDemoConfig(rule.demoConfig);
     if (demoConfig?.kind === 'chatbot') {
-      injectChatbot({ agentId: demoConfig.agentId, baseUrl: demoConfig.baseUrl });
+      injectChatbot({ agentId: demoConfig.agentId, account: demoConfig.account, baseUrl: demoConfig.baseUrl });
       return;
     }
 
@@ -278,6 +291,18 @@ function createController(): Controller {
 
     if (demoConfig?.kind === 'returns-portal') {
       renderReturnsPortalRule(element, rule);
+      return;
+    }
+
+    if (demoConfig?.kind === 'text-replace') {
+      if (!appliedStates.has(rule.id)) {
+        appliedStates.set(rule.id, {
+          action: 'text-replace',
+          element,
+          originalText: element.textContent ?? ''
+        });
+      }
+      element.textContent = demoConfig.text;
       return;
     }
 
@@ -309,6 +334,8 @@ function createController(): Controller {
       } else {
         state.element.style.removeProperty('display');
       }
+    } else if (state.action === 'text-replace') {
+      state.element.textContent = state.originalText;
     } else if (state.action === 'insert-after') {
       if (state.insertedNode.isConnected) {
         state.insertedNode.remove();
@@ -482,7 +509,7 @@ function getSelectableElement(target: EventTarget | null): HTMLElement | null {
     return null;
   }
 
-  if (element.id.startsWith(INTERNAL_PREFIX)) {
+  if (typeof element.id === 'string' && element.id.startsWith(INTERNAL_PREFIX)) {
     return null;
   }
 
@@ -680,7 +707,7 @@ function renderSelectionGuideRule(
   }
 
   const containerId = `parcellab-selection-guide-${rule.id}`;
-  const renderKey = `${demoConfig.accountId}:${demoConfig.productId}:${demoConfig.locale}:${demoConfig.appearance}:${demoConfig.density}:${demoConfig.surface}:${demoConfig.notFoundMode}`;
+  const renderKey = `${demoConfig.accountId}:${demoConfig.productId}:${demoConfig.locale}:${demoConfig.appearance}:${demoConfig.density}:${demoConfig.surface}:${demoConfig.notFoundMode}:${demoConfig.marginTop}:${demoConfig.marginBottom}`;
 
   let container = document.getElementById(containerId);
 
@@ -690,7 +717,8 @@ function renderSelectionGuideRule(
     container.dataset.plDemoSgRoot = 'true';
     container.dataset.plDemoSgKey = renderKey;
     container.style.position = 'relative';
-    container.style.marginTop = '8px';
+    container.style.marginTop = demoConfig.marginTop ? `${demoConfig.marginTop}px` : '8px';
+    container.style.marginBottom = demoConfig.marginBottom ? `${demoConfig.marginBottom}px` : '0';
 
     const loadingCopy = document.createElement('div');
     loadingCopy.dataset.plDemoSgPlaceholder = 'true';

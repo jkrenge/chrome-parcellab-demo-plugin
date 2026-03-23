@@ -81,7 +81,8 @@ export default function App() {
     DEFAULT_DEMO_DRAFT_CONFIG
   );
   const [chatbotConfig, setChatbotConfig] = useState<ChatbotConfig>({
-    agentId: '',
+    agentId: '58e65ace-932b-4f9d-adec-f14778fab334',
+    account: 1619884,
     baseUrl: 'https://product-api.parcellab.com'
   });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -357,6 +358,27 @@ export default function App() {
     }
   }
 
+  async function copyPageDebugData(): Promise<void> {
+    const pageRules = activeTab.normalizedScopeUrl
+      ? allRules.filter(
+          (rule) => resolveRuleScopeUrl(rule) === activeTab.normalizedScopeUrl
+        )
+      : allRules;
+
+    const payload = {
+      url: activeTab.url,
+      normalizedScopeUrl: activeTab.normalizedScopeUrl,
+      rules: pageRules
+    };
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setStatusMessage('Debug data copied to clipboard.');
+    } catch {
+      setStatusMessage('Could not copy to clipboard.');
+    }
+  }
+
   async function addChatbot(): Promise<void> {
     if (!activeTab.supported || !activeTab.id) {
       setStatusMessage('This page does not support the chatbot.');
@@ -393,6 +415,7 @@ export default function App() {
         demoConfig: {
           kind: 'chatbot',
           agentId: chatbotConfig.agentId.trim(),
+          account: chatbotConfig.account,
           baseUrl: chatbotConfig.baseUrl
         },
         summary: 'Chatbot widget',
@@ -488,7 +511,7 @@ export default function App() {
           </label>
         </section>
 
-        {draftConfig.plugin !== 'selection-guide' ? (
+        {draftConfig.plugin !== 'selection-guide' && draftConfig.plugin !== 'text-replace' ? (
           <section
             className={`grid gap-3 ${
               draftConfig.plugin === 'returns-portal' ? 'grid-cols-2' : 'grid-cols-1'
@@ -684,7 +707,62 @@ export default function App() {
                 </div>
               </label>
             </section>
+
+            <section className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Margin top (px)</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={draftConfig.selectionGuideMarginTop}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      selectionGuideMarginTop: Math.max(0, parseInt(event.target.value, 10) || 0)
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Margin bottom (px)</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={draftConfig.selectionGuideMarginBottom}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      selectionGuideMarginBottom: Math.max(0, parseInt(event.target.value, 10) || 0)
+                    }))
+                  }
+                />
+              </label>
+            </section>
           </>
+        ) : null}
+
+        {draftConfig.plugin === 'text-replace' ? (
+          <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Replacement Text
+            </h2>
+            <textarea
+              className="w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              rows={3}
+              placeholder="The text that will replace the selected element's content…"
+              value={draftConfig.textReplaceText}
+              onChange={(event) =>
+                updateDraftConfig((current) => ({
+                  ...current,
+                  textReplaceText: event.target.value
+                }))
+              }
+            />
+          </section>
         ) : null}
 
         {draftConfig.plugin === 'chatbot' ? (
@@ -773,6 +851,18 @@ export default function App() {
             onDeleteRule={(ruleId) => void deleteRules([ruleId])}
           />
         ))}
+
+        {!isHydrating && activeTab.supported ? (
+          <div className="flex justify-end">
+            <button
+              className="text-[11px] font-medium text-slate-400 transition hover:text-slate-600"
+              onClick={() => void copyPageDebugData()}
+              title="Copy stored rules for this page as JSON"
+            >
+              Copy page debug data
+            </button>
+          </div>
+        ) : null}
       </div>
     </main>
   );
@@ -965,6 +1055,10 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
 
   if (rule.demoConfig?.kind === 'chatbot') {
     return 'Chatbot';
+  }
+
+  if (rule.demoConfig?.kind === 'text-replace') {
+    return 'Text';
   }
 
   return 'Replace';

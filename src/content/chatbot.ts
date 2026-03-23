@@ -143,7 +143,11 @@ function buildChatWindow(): HTMLElement {
   for (const msg of messages) {
     const bubble = document.createElement('div');
     bubble.className = `message ${msg.role}`;
-    bubble.textContent = msg.content;
+    if (msg.role === 'assistant') {
+      bubble.innerHTML = renderMarkdown(msg.content);
+    } else {
+      bubble.textContent = msg.content;
+    }
     messageList.appendChild(bubble);
   }
 
@@ -284,6 +288,28 @@ function sendSvg(): string {
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 }
 
+function renderMarkdown(text: string): string {
+  // Escape HTML
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text* (but not inside bold)
+  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+
+  // Inline code: `code`
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
+}
+
 function getStyles(): string {
   return `
     :host {
@@ -338,8 +364,8 @@ function getStyles(): string {
     }
 
     .chat-window {
-      width: 380px;
-      max-height: 520px;
+      width: 440px;
+      max-height: 640px;
       background: white;
       border-radius: 16px;
       box-shadow: 0 16px 48px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -390,8 +416,8 @@ function getStyles(): string {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      min-height: 280px;
-      max-height: 380px;
+      min-height: 360px;
+      max-height: 500px;
     }
 
     .empty-state {
@@ -468,6 +494,18 @@ function getStyles(): string {
       background: #f1f5f9;
       color: #1e293b;
       border-bottom-left-radius: 4px;
+    }
+
+    .message.assistant strong {
+      font-weight: 600;
+    }
+
+    .message.assistant code {
+      background: rgba(0, 0, 0, 0.06);
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 12px;
+      font-family: ui-monospace, monospace;
     }
 
     .message.loading {
