@@ -509,12 +509,17 @@ function getSelectableElement(target: EventTarget | null): HTMLElement | null {
     return null;
   }
 
-  if (typeof element.id === 'string' && element.id.startsWith(INTERNAL_PREFIX)) {
+  const elId = typeof element.id === 'string' ? element.id : '';
+  if (elId.startsWith(INTERNAL_PREFIX)) {
     return null;
   }
 
-  if (element.closest(`[id^="${INTERNAL_PREFIX}"]`)) {
-    return null;
+  try {
+    if (element.closest(`[id^="${INTERNAL_PREFIX}"]`)) {
+      return null;
+    }
+  } catch {
+    // closest() can throw on non-standard DOM trees (e.g. SVG)
   }
 
   return element;
@@ -522,8 +527,9 @@ function getSelectableElement(target: EventTarget | null): HTMLElement | null {
 
 function summarizeElement(element: HTMLElement): string {
   const parts = [element.tagName.toLowerCase()];
-  if (element.id) {
-    parts.push(`#${element.id}`);
+  const id = typeof element.id === 'string' ? element.id : '';
+  if (id) {
+    parts.push(`#${id}`);
   }
 
   const classNames = Array.from(element.classList).slice(0, 2);
@@ -611,8 +617,9 @@ function removeOverlayUi(): void {
 }
 
 function createUniqueSelector(element: HTMLElement): string {
-  if (element.id) {
-    const selector = `#${CSS.escape(element.id)}`;
+  const elId = typeof element.id === 'string' ? element.id : '';
+  if (elId) {
+    const selector = `#${CSS.escape(elId)}`;
     if (isUniqueSelector(selector)) {
       return selector;
     }
@@ -657,8 +664,9 @@ function buildSelectorSegment(element: HTMLElement): string {
 
   let segment = element.tagName.toLowerCase();
 
-  if (element.id) {
-    return `${segment}#${CSS.escape(element.id)}`;
+  const segId = typeof element.id === 'string' ? element.id : '';
+  if (segId) {
+    return `${segment}#${CSS.escape(segId)}`;
   }
 
   const stableClasses = Array.from(element.classList)

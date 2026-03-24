@@ -89,6 +89,10 @@ export default function App() {
   const [isHydrating, setIsHydrating] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading…');
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{
+    latestVersion: string;
+    releaseUrl: string;
+  } | null>(null);
   const canStartReplaceSelection =
     !isHydrating &&
     activeTab.supported &&
@@ -103,7 +107,7 @@ export default function App() {
 
   async function hydrate(): Promise<void> {
     try {
-      const [[tab], rules, persistedDraft, persistedChatbot, authStatus] = await Promise.all([
+      const [[tab], rules, persistedDraft, persistedChatbot, authStatus, storedUpdate] = await Promise.all([
         chrome.tabs.query({
           active: true,
           currentWindow: true
@@ -111,8 +115,18 @@ export default function App() {
         getSavedModifications(),
         getDemoDraftConfig(),
         getChatbotConfig(),
-        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }) as Promise<AuthStatusResponse>
+        chrome.runtime.sendMessage({ type: 'AUTH_STATUS' }) as Promise<AuthStatusResponse>,
+        chrome.storage.local.get('updateInfo') as Promise<{
+          updateInfo?: { latestVersion: string; releaseUrl: string };
+        }>
       ]);
+
+      if (storedUpdate?.updateInfo?.latestVersion) {
+        setUpdateInfo(storedUpdate.updateInfo);
+      }
+
+      // Also do a live check in case the background alarm hasn't fired yet
+      void fetchUpdateInfo();
 
       const url = tab?.url ?? '';
       const supported = isWebUrl(url);
@@ -146,6 +160,34 @@ export default function App() {
     } finally {
       setIsHydrating(false);
     }
+  }
+
+  async function fetchUpdateInfo(): Promise<void> {
+    try {
+      const res = await fetch(
+        'https://api.github.com/repos/jkrenge/chrome-parcellab-demo-plugin/releases/latest',
+        { headers: { 'Accept': 'application/vnd.github.v3+json' } }
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { tag_name?: string; html_url?: string };
+      const latest = data.tag_name?.replace(/^v/, '') ?? '';
+      const current = chrome.runtime.getManifest().version;
+      if (latest && isNewerVersion(latest, current)) {
+        setUpdateInfo({ latestVersion: latest, releaseUrl: data.html_url ?? '' });
+      }
+    } catch {
+      // Offline or rate-limited — ignore.
+    }
+  }
+
+  function isNewerVersion(latest: string, current: string): boolean {
+    const l = latest.split('.').map(Number);
+    const c = current.split('.').map(Number);
+    for (let i = 0; i < Math.max(l.length, c.length); i++) {
+      if ((l[i] ?? 0) > (c[i] ?? 0)) return true;
+      if ((l[i] ?? 0) < (c[i] ?? 0)) return false;
+    }
+    return false;
   }
 
   async function ensureInjected(tabId: number): Promise<void> {
@@ -442,19 +484,6 @@ export default function App() {
     }
   }
 
-  const accountIdLabel =
-    draftConfig.plugin === 'track-and-trace'
-      ? 'User ID'
-      : draftConfig.plugin === 'selection-guide'
-        ? 'Account ID'
-        : 'Account Name';
-  const accountIdPlaceholder =
-    draftConfig.plugin === 'track-and-trace'
-      ? '1612197'
-      : draftConfig.plugin === 'selection-guide'
-        ? '1617954'
-        : 'parcellab-account-name';
-
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-900">
       <div className="space-y-4">
@@ -464,85 +493,126 @@ export default function App() {
           </h1>
         </header>
 
-        <section className="grid grid-cols-2 gap-3">
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">Plugin</span>
-            <div className="relative">
-              <select
-                className="h-11 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-14 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={draftConfig.plugin}
-                onChange={(event) =>
-                  updateDraftConfig((current) => ({
-                    ...current,
-                    plugin: event.target.value as DemoPluginKind
-                  }))
-                }
-              >
-                {DEMO_PLUGIN_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <SelectChevron />
-            </div>
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium text-slate-500">Language</span>
-            <div className="relative">
-              <select
-                className="h-11 w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 pr-14 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={draftConfig.lang}
-                onChange={(event) =>
-                  updateDraftConfig((current) => ({
-                    ...current,
-                    lang: event.target.value as SupportedLanguage
-                  }))
-                }
-              >
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <SelectChevron />
-            </div>
-          </label>
-        </section>
-
-        {draftConfig.plugin !== 'selection-guide' && draftConfig.plugin !== 'text-replace' ? (
-          <section
-            className={`grid gap-3 ${
-              draftConfig.plugin === 'returns-portal' ? 'grid-cols-2' : 'grid-cols-1'
-            }`}
+        {updateInfo ? (
+          <a
+            href={updateInfo.releaseUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 transition hover:bg-amber-100"
           >
-            <label className="space-y-1.5">
-              <span className="text-xs font-medium text-slate-500">
-                {accountIdLabel}
-              </span>
-              <input
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                inputMode={draftConfig.plugin === 'track-and-trace' ? 'numeric' : 'text'}
-                maxLength={draftConfig.plugin === 'track-and-trace' ? 7 : undefined}
-                placeholder={accountIdPlaceholder}
-                value={draftConfig.accountId}
-                onChange={(event) =>
-                  updateDraftConfig((current) => ({
-                    ...current,
-                    accountId:
-                      current.plugin === 'track-and-trace'
-                        ? event.target.value.replace(/\D+/g, '').slice(0, 7)
-                        : event.target.value
-                  }))
-                }
-              />
-            </label>
-            {draftConfig.plugin === 'returns-portal' ? (
-              <label className="space-y-1.5">
-                <span className="text-xs font-medium text-slate-500">Portal Code</span>
+            <span>
+              v{updateInfo.latestVersion} available — you're on v{chrome.runtime.getManifest().version}
+            </span>
+            <span className="font-semibold">Download &rarr;</span>
+          </a>
+        ) : null}
+
+        {/* Plugin tabs */}
+        <nav className="flex gap-1">
+          {DEMO_PLUGIN_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              className={`h-7 flex-1 rounded-full px-2 text-[11px] font-medium transition ${
+                draftConfig.plugin === option.value
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+              onClick={() =>
+                updateDraftConfig((current) => ({
+                  ...current,
+                  plugin: option.value as DemoPluginKind
+                }))
+              }
+            >
+              {option.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* Track & Trace */}
+        {draftConfig.plugin === 'track-and-trace' ? (
+          <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">User ID</span>
                 <input
-                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  inputMode="numeric"
+                  maxLength={7}
+                  placeholder="1612197"
+                  value={draftConfig.accountId}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      accountId: event.target.value.replace(/\D+/g, '').slice(0, 7)
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Language</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.lang}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        lang: event.target.value as SupportedLanguage
+                      }))
+                    }
+                  >
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md bg-blue-600 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection' ? 'Starting…' : 'Pick Element'}
+              </button>
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Hide Element'}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {/* Returns Portal */}
+        {draftConfig.plugin === 'returns-portal' ? (
+          <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Account Name or ID</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="parcellab-account-name"
+                  value={draftConfig.accountId}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      accountId: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Portal Code</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   placeholder="xt-de"
                   value={draftConfig.portalCode}
                   onChange={(event) =>
@@ -553,18 +623,33 @@ export default function App() {
                   }
                 />
               </label>
-            ) : null}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md bg-blue-600 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection' ? 'Starting…' : 'Pick Element'}
+              </button>
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Hide Element'}
+              </button>
+            </div>
           </section>
         ) : null}
 
+        {/* Selection Guide */}
         {draftConfig.plugin === 'selection-guide' ? (
           <>
             <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
               <div className="grid grid-cols-2 gap-2">
                 <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-500">
-                    Account ID
-                  </span>
+                  <span className="text-[11px] font-medium text-slate-500">Account ID</span>
                   <input
                     className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     placeholder="1617954"
@@ -578,9 +663,7 @@ export default function App() {
                   />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-500">
-                    Product ID
-                  </span>
+                  <span className="text-[11px] font-medium text-slate-500">Product ID</span>
                   <input
                     className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     placeholder="Men's Iver Pants (tailored fit)"
@@ -623,8 +706,7 @@ export default function App() {
                     onChange={(event) =>
                       updateDraftConfig((current) => ({
                         ...current,
-                        selectionGuideAppearance: event.target
-                          .value as SelectionGuideAppearance
+                        selectionGuideAppearance: event.target.value as SelectionGuideAppearance
                       }))
                     }
                   >
@@ -646,8 +728,7 @@ export default function App() {
                     onChange={(event) =>
                       updateDraftConfig((current) => ({
                         ...current,
-                        selectionGuideDensity: event.target
-                          .value as SelectionGuideDensity
+                        selectionGuideDensity: event.target.value as SelectionGuideDensity
                       }))
                     }
                   >
@@ -669,8 +750,7 @@ export default function App() {
                     onChange={(event) =>
                       updateDraftConfig((current) => ({
                         ...current,
-                        selectionGuideSurface: event.target
-                          .value as SelectionGuideSurface
+                        selectionGuideSurface: event.target.value as SelectionGuideSurface
                       }))
                     }
                   >
@@ -692,8 +772,7 @@ export default function App() {
                     onChange={(event) =>
                       updateDraftConfig((current) => ({
                         ...current,
-                        selectionGuideNotFoundMode: event.target
-                          .value as SelectionGuideNotFoundMode
+                        selectionGuideNotFoundMode: event.target.value as SelectionGuideNotFoundMode
                       }))
                     }
                   >
@@ -742,14 +821,29 @@ export default function App() {
                 />
               </label>
             </section>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md bg-blue-600 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection' ? 'Starting…' : 'Pick Element'}
+              </button>
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Hide Element'}
+              </button>
+            </div>
           </>
         ) : null}
 
+        {/* Text Replace */}
         {draftConfig.plugin === 'text-replace' ? (
-          <section className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Replacement Text
-            </h2>
+          <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
             <textarea
               className="w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               rows={3}
@@ -762,40 +856,60 @@ export default function App() {
                 }))
               }
             />
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md bg-blue-600 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection' ? 'Starting…' : 'Pick Element'}
+              </button>
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Hide Element'}
+              </button>
+            </div>
           </section>
         ) : null}
 
+        {/* Chatbot */}
         {draftConfig.plugin === 'chatbot' ? (
-          <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Chatbot
-              </h2>
-              {isAuthenticated ? (
-                <button
-                  className="text-xs font-medium text-slate-500 transition hover:text-slate-800 disabled:text-slate-300"
-                  disabled={busyAction !== null}
-                  onClick={() => void handleLogout()}
-                >
-                  {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
-                </button>
-              ) : null}
-            </div>
+          <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
             {!isAuthenticated ? (
-              <button
-                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                disabled={isHydrating || busyAction !== null}
-                onClick={() => void handleLogin()}
-              >
-                {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
-              </button>
+              <>
+                <button
+                  className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                  disabled={isHydrating || busyAction !== null}
+                  onClick={() => void handleLogin()}
+                >
+                  {busyAction === 'auth-login' ? 'Logging in…' : 'Log in with parcelLab'}
+                </button>
+              </>
             ) : (
               <>
-                <label className="block space-y-1.5">
-                  <span className="text-xs font-medium text-slate-500">Agent ID</span>
-                  <div className="flex gap-2">
+                <div className="flex items-end gap-2">
+                  <label className="min-w-0 flex-1 space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">Account</span>
                     <input
-                      className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      placeholder="1619884"
+                      inputMode="numeric"
+                      value={chatbotConfig.account}
+                      onChange={(event) =>
+                        updateChatbotConfig((current) => ({
+                          ...current,
+                          account: parseInt(event.target.value, 10) || 0
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="min-w-0 flex-[2] space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">Agent ID</span>
+                    <input
+                      className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                       placeholder="58e65ace-932b-4f9d-…"
                       value={chatbotConfig.agentId}
                       onChange={(event) =>
@@ -805,40 +919,28 @@ export default function App() {
                         }))
                       }
                     />
-                    <button
-                      className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-                      disabled={!canAddChatbot}
-                      onClick={() => void addChatbot()}
-                    >
-                      {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
-                    </button>
-                  </div>
-                </label>
+                  </label>
+                  <button
+                    className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                    disabled={!canAddChatbot}
+                    onClick={() => void addChatbot()}
+                  >
+                    {busyAction === 'add-chatbot' ? 'Adding…' : 'Add Chatbot'}
+                  </button>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    className="text-[11px] font-medium text-slate-400 transition hover:text-slate-600 disabled:text-slate-300"
+                    disabled={busyAction !== null}
+                    onClick={() => void handleLogout()}
+                  >
+                    {busyAction === 'auth-logout' ? 'Logging out…' : 'Log out'}
+                  </button>
+                </div>
               </>
             )}
           </section>
-        ) : (
-          <section>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
-                disabled={!canStartReplaceSelection}
-                onClick={() => void beginSelection('replace')}
-              >
-                {busyAction === 'replace-selection'
-                  ? 'Starting…'
-                  : 'Pick Demo Content Element'}
-              </button>
-              <button
-                className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-                disabled={isHydrating || !activeTab.supported || busyAction !== null}
-                onClick={() => void beginSelection('hide')}
-              >
-                {busyAction === 'hide-selection' ? 'Starting…' : 'Pick Element To Hide'}
-              </button>
-            </div>
-          </section>
-        )}
+        ) : null}
 
         {groupedRules.length === 0 ? <EmptyState copy="No saved pages yet." /> : null}
 

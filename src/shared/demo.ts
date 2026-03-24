@@ -40,11 +40,11 @@ export const DEMO_PLUGIN_OPTIONS: Array<{
   label: string;
   value: DemoPluginKind;
 }> = [
-  { label: 'Track & Trace', value: 'track-and-trace' },
-  { label: 'Returns Portal', value: 'returns-portal' },
-  { label: 'Selection Guide', value: 'selection-guide' },
+  { label: 'Tracking', value: 'track-and-trace' },
+  { label: 'Returns', value: 'returns-portal' },
+  { label: 'Size Guide', value: 'selection-guide' },
   { label: 'Chatbot', value: 'chatbot' },
-  { label: 'Text Replace', value: 'text-replace' }
+  { label: 'Text', value: 'text-replace' }
 ];
 
 export const SELECTION_GUIDE_APPEARANCE_OPTIONS: Array<{

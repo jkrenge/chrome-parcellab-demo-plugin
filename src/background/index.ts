@@ -14,14 +14,76 @@ import type {
 } from '../shared/types';
 
 const CONTENT_SCRIPT_ID = 'parcellab-demo-content-script';
+const UPDATE_CHECK_ALARM = 'check-update';
+const UPDATE_CHECK_INTERVAL_MINUTES = 60;
+const GITHUB_RELEASES_URL =
+  'https://api.github.com/repos/jkrenge/chrome-parcellab-demo-plugin/releases/latest';
+const UPDATE_INFO_KEY = 'updateInfo';
 
 chrome.runtime.onInstalled.addListener(() => {
   void syncRegisteredContentScript();
+  void setupUpdateCheck();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void syncRegisteredContentScript();
+  void setupUpdateCheck();
 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === UPDATE_CHECK_ALARM) {
+    void checkForUpdate();
+  }
+});
+
+async function setupUpdateCheck(): Promise<void> {
+  await chrome.alarms.create(UPDATE_CHECK_ALARM, {
+    delayInMinutes: 1,
+    periodInMinutes: UPDATE_CHECK_INTERVAL_MINUTES
+  });
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const latestParts = latest.replace(/^v/, '').split('.').map(Number);
+  const currentParts = current.split('.').map(Number);
+  for (let i = 0; i < Math.max(latestParts.length, currentParts.length); i++) {
+    const l = latestParts[i] ?? 0;
+    const c = currentParts[i] ?? 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+}
+
+async function checkForUpdate(): Promise<void> {
+  try {
+    const response = await fetch(GITHUB_RELEASES_URL, {
+      headers: { 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!response.ok) return;
+
+    const data = (await response.json()) as {
+      tag_name?: string;
+      html_url?: string;
+    };
+    const latestVersion = data.tag_name?.replace(/^v/, '') ?? '';
+    const currentVersion = chrome.runtime.getManifest().version;
+
+    if (latestVersion && isNewerVersion(latestVersion, currentVersion)) {
+      await chrome.storage.local.set({
+        [UPDATE_INFO_KEY]: {
+          latestVersion,
+          releaseUrl: data.html_url ?? '',
+          checkedAt: new Date().toISOString()
+        }
+      });
+    } else {
+      await chrome.storage.local.remove(UPDATE_INFO_KEY);
+    }
+  } catch {
+    // Network errors are expected when offline — silently ignore.
+  }
+}
 
 chrome.runtime.onMessage.addListener(
   (message: BackgroundRequest, sender, sendResponse) => {
