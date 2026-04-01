@@ -44,5 +44,11 @@ await Promise.all([
     entryPoints: [resolve(rootDir, 'src/content/index.ts')],
     format: 'iife',
     outfile: resolve(distDir, 'content.js')
+  }),
+  esbuild({
+    ...sharedBuildOptions(),
+    entryPoints: [resolve(rootDir, 'src/content/returns-iframe-fix.ts')],
+    format: 'iife',
+    outfile: resolve(distDir, 'returns-iframe-fix.js')
   })
 ]);

@@ -14,6 +14,7 @@ import type {
 } from '../shared/types';
 
 const CONTENT_SCRIPT_ID = 'parcellab-demo-content-script';
+const RETURNS_IFRAME_FIX_SCRIPT_ID = 'parcellab-returns-iframe-fix';
 const UPDATE_CHECK_ALARM = 'check-update';
 const UPDATE_CHECK_INTERVAL_MINUTES = 60;
 const GITHUB_RELEASES_URL =
@@ -215,19 +216,25 @@ async function syncRegisteredContentScript(): Promise<void> {
     new Set(rules.map((rule) => toMatchPattern(resolveRuleScopeUrl(rule))))
   );
 
+  const hasReturnsPortalRule = rules.some(
+    (rule) => rule.demoConfig?.kind === 'returns-portal'
+  );
+
   const existing = await chrome.scripting.getRegisteredContentScripts({
-    ids: [CONTENT_SCRIPT_ID]
+    ids: [CONTENT_SCRIPT_ID, RETURNS_IFRAME_FIX_SCRIPT_ID]
   });
 
   if (existing.length > 0) {
-    await chrome.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+    await chrome.scripting.unregisterContentScripts({
+      ids: existing.map((s) => s.id)
+    });
   }
 
   if (matches.length === 0) {
     return;
   }
 
-  await chrome.scripting.registerContentScripts([
+  const scripts: chrome.scripting.RegisteredContentScript[] = [
     {
       id: CONTENT_SCRIPT_ID,
       js: ['content.js'],
@@ -235,7 +242,20 @@ async function syncRegisteredContentScript(): Promise<void> {
       persistAcrossSessions: true,
       runAt: 'document_idle'
     }
-  ]);
+  ];
+
+  if (hasReturnsPortalRule) {
+    scripts.push({
+      id: RETURNS_IFRAME_FIX_SCRIPT_ID,
+      js: ['returns-iframe-fix.js'],
+      matches: ['https://returns-app.parcellab.com/*'],
+      allFrames: true,
+      persistAcrossSessions: true,
+      runAt: 'document_start'
+    });
+  }
+
+  await chrome.scripting.registerContentScripts(scripts);
 }
 
 async function renderTrackAndTrace(
