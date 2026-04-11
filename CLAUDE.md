@@ -1,3 +1,6 @@
+## Local Testing
+- When the user asks to build for local testing, always produce the bundle zip (`chrome-parcellab-demo-plugin-<version>-bundle.zip`) from the `dist/` contents and open the folder containing the zip in Finder. The user installs the extension by loading the unpacked `dist/` directory or by dragging the zip into Chrome.
+
 # Repository Instructions
 
 ## Project

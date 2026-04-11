@@ -1,10 +1,10 @@
 export type ModificationAction = 'hide' | 'replace';
 export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot' | 'text-replace';
 
-export type SelectionGuideAppearance = 'neutral' | 'colored';
+export type SelectionGuideAppearance = 'neutral' | 'colored' | 'alert';
 export type SelectionGuideDensity = 'compact' | 'comfortable';
 export type SelectionGuideSurface = 'subtle' | 'plain';
-export type SelectionGuideNotFoundMode = 'empty' | 'true-to-size';
+export type SelectionGuideNotFoundMode = 'empty' | 'true-to-size' | 'hidden';
 
 export type SupportedLanguage =
   | 'en'
@@ -38,6 +38,10 @@ export type SelectionGuideConfig = {
   density: SelectionGuideDensity;
   surface: SelectionGuideSurface;
   notFoundMode: SelectionGuideNotFoundMode;
+  showPill: boolean;
+  showScale: boolean;
+  showRecommendation: boolean;
+  showSummary: boolean;
   marginTop: number;
   marginBottom: number;
 };
@@ -67,6 +71,10 @@ export type DemoDraftConfig = {
   selectionGuideDensity: SelectionGuideDensity;
   selectionGuideSurface: SelectionGuideSurface;
   selectionGuideNotFoundMode: SelectionGuideNotFoundMode;
+  selectionGuideShowPill: boolean;
+  selectionGuideShowScale: boolean;
+  selectionGuideShowRecommendation: boolean;
+  selectionGuideShowSummary: boolean;
   selectionGuideMarginTop: number;
   selectionGuideMarginBottom: number;
   textReplaceText: string;

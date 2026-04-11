@@ -601,9 +601,16 @@ async function renderSelectionGuide(
       targetContainerId: string,
       config: SelectionGuideConfig
     ) => {
+      const LOG_PREFIX = '[plDemo:SG]';
+      const log = (...args: unknown[]) => console.log(LOG_PREFIX, ...args);
+      const logError = (...args: unknown[]) => console.error(LOG_PREFIX, ...args);
+
       const SCRIPT_ID = 'pl-demo-selection-guide-script';
       const SCRIPT_SRC =
-        'https://parcellab.github.io/selection-guide-ui/dist/size-recommender.iife.js';
+        'https://cdn.parcellab.com/playground/selection-guide-ui/dist/size-recommender.iife.js';
+
+      log('renderSelectionGuide called', { targetContainerId, config });
+      log('Script URL:', SCRIPT_SRC);
 
       type SelectionGuideWindow = Window & {
         __plDemoSelectionGuideLoaderPromise__?: Promise<void>;
@@ -617,6 +624,10 @@ async function renderSelectionGuide(
             density?: string;
             surface?: string;
             notFoundMode?: string;
+            showPill?: boolean;
+            showScale?: boolean;
+            showRecommendation?: boolean;
+            showSummary?: boolean;
           }) => { update: (options: Record<string, unknown>) => void; destroy: () => void };
         };
       };
@@ -624,10 +635,14 @@ async function renderSelectionGuide(
       const scopedWindow = window as SelectionGuideWindow;
       const container = document.getElementById(targetContainerId);
       if (!container) {
+        logError('Container not found:', targetContainerId);
         return { ok: false, error: 'Selection Guide container not found.' };
       }
 
+      log('Container found:', container.id);
+
       const showContainerError = (message: string) => {
+        logError('Showing container error:', message);
         container.dataset.plDemoSgRequested = 'false';
         container.dataset.plDemoSgRendered = 'false';
 
@@ -644,11 +659,12 @@ async function renderSelectionGuide(
         container.replaceChildren(wrapper);
       };
 
-      const renderKey = `${config.accountId}:${config.productId}:${config.locale}:${config.appearance}:${config.density}:${config.surface}:${config.notFoundMode}:${config.marginTop ?? 0}:${config.marginBottom ?? 0}`;
+      const renderKey = `${config.accountId}:${config.productId}:${config.locale}:${config.appearance}:${config.density}:${config.surface}:${config.notFoundMode}:${String(config.showPill)}:${String(config.showScale)}:${String(config.showRecommendation)}:${String(config.showSummary)}:${config.marginTop ?? 0}:${config.marginBottom ?? 0}`;
       if (
         container.dataset.plDemoSgKey === renderKey &&
         container.dataset.plDemoSgRendered === 'true'
       ) {
+        log('Already rendered with same key, skipping');
         return { ok: true };
       }
 
@@ -656,15 +672,22 @@ async function renderSelectionGuide(
       container.dataset.plDemoSgRequested = 'running';
       container.dataset.plDemoSgRendered = 'false';
 
+      log('SizeRecommender already on window?', typeof scopedWindow.SizeRecommender, typeof scopedWindow.SizeRecommender?.init);
+      log('Cached loader promise?', !!scopedWindow.__plDemoSelectionGuideLoaderPromise__);
+      log('Existing script tag?', !!document.getElementById(SCRIPT_ID));
+
       const ensureScript = async () => {
         if (typeof scopedWindow.SizeRecommender?.init === 'function') {
+          log('SizeRecommender.init already available');
           return;
         }
 
         if (scopedWindow.__plDemoSelectionGuideLoaderPromise__) {
+          log('Reusing existing loader promise');
           return scopedWindow.__plDemoSelectionGuideLoaderPromise__;
         }
 
+        log('Creating new loader promise');
         scopedWindow.__plDemoSelectionGuideLoaderPromise__ = new Promise<void>(
           (resolve, reject) => {
             const existingScript = document.getElementById(
@@ -672,73 +695,136 @@ async function renderSelectionGuide(
             ) as HTMLScriptElement | null;
 
             if (existingScript) {
+              log('Found existing script tag, plDemoLoaded=', existingScript.dataset.plDemoLoaded);
+
               if (existingScript.dataset.plDemoLoaded === 'true') {
                 resolve();
                 return;
               }
 
-              existingScript.addEventListener('load', () => resolve(), {
-                once: true
-              });
+              // If the script tag exists but hasn't loaded, it may have already
+              // fired its events. Check if SizeRecommender appeared.
+              if (typeof scopedWindow.SizeRecommender?.init === 'function') {
+                log('SizeRecommender appeared despite plDemoLoaded not set');
+                existingScript.dataset.plDemoLoaded = 'true';
+                resolve();
+                return;
+              }
+
+              log('Attaching load/error listeners to existing script tag');
+              existingScript.addEventListener('load', () => {
+                log('Existing script tag fired load');
+                resolve();
+              }, { once: true });
               existingScript.addEventListener(
                 'error',
-                () => reject(new Error('Could not load Selection Guide script.')),
+                (event) => {
+                  logError('Existing script tag fired error', event);
+                  reject(new Error('Could not load Selection Guide script (existing tag error).'));
+                },
                 { once: true }
               );
+
+              // Safety timeout: if neither load nor error fire within 15s, the
+              // script tag may have already completed before we attached listeners.
+              setTimeout(() => {
+                if (typeof scopedWindow.SizeRecommender?.init === 'function') {
+                  log('SizeRecommender appeared after timeout fallback');
+                  existingScript.dataset.plDemoLoaded = 'true';
+                  resolve();
+                } else {
+                  logError('Timeout waiting for existing script tag — removing stale tag and retrying');
+                  existingScript.remove();
+                  scopedWindow.__plDemoSelectionGuideLoaderPromise__ = undefined;
+                  reject(new Error('Selection Guide script timed out. Stale tag removed — please retry.'));
+                }
+              }, 15_000);
               return;
             }
 
+            log('Creating new script tag for', SCRIPT_SRC);
             const scriptTag = document.createElement('script');
             scriptTag.id = SCRIPT_ID;
             scriptTag.async = true;
             scriptTag.src = SCRIPT_SRC;
             scriptTag.onload = () => {
+              log('Script tag onload fired. SizeRecommender?', typeof scopedWindow.SizeRecommender);
               scriptTag.dataset.plDemoLoaded = 'true';
               resolve();
             };
-            scriptTag.onerror = () =>
-              reject(new Error('Could not load Selection Guide script.'));
+            scriptTag.onerror = (event) => {
+              logError('Script tag onerror fired', event);
+              logError('This usually means CSP blocked the script or the URL is unreachable.');
+              reject(new Error(`Could not load Selection Guide script from ${SCRIPT_SRC}. Check the page CSP and network tab.`));
+            };
             document.head.appendChild(scriptTag);
+            log('Script tag appended to <head>');
           }
         );
 
         return scopedWindow.__plDemoSelectionGuideLoaderPromise__.catch((error) => {
+          logError('Loader promise rejected:', error);
           scopedWindow.__plDemoSelectionGuideLoaderPromise__ = undefined;
           throw error;
         });
       };
 
+      log('Starting ensureScript()');
       void ensureScript()
         .then(() => {
+          log('ensureScript resolved. Checking container and SizeRecommender...');
+
           const liveContainer = document.getElementById(targetContainerId);
           if (!liveContainer) {
+            logError('Container disappeared after script loaded');
             return;
           }
 
+          log('window.SizeRecommender:', typeof scopedWindow.SizeRecommender);
+          log('window.SizeRecommender.init:', typeof scopedWindow.SizeRecommender?.init);
+
           if (typeof scopedWindow.SizeRecommender?.init !== 'function') {
             showContainerError(
-              'Selection Guide did not expose SizeRecommender.init().'
+              'Selection Guide loaded but SizeRecommender.init() not found. Check if the script exposes this global.'
             );
             return;
           }
 
+          log('Clearing container and calling SizeRecommender.init()');
           liveContainer.replaceChildren();
 
-          scopedWindow.SizeRecommender.init({
-            target: liveContainer,
-            accountId: config.accountId,
-            productId: config.productId || undefined,
-            locale: config.locale,
-            appearance: config.appearance,
-            density: config.density,
-            surface: config.surface,
-            notFoundMode: config.notFoundMode
-          });
+          try {
+            const initOptions = {
+              target: liveContainer,
+              accountId: config.accountId,
+              productId: config.productId || undefined,
+              locale: config.locale,
+              appearance: config.appearance,
+              density: config.density,
+              surface: config.surface,
+              notFoundMode: config.notFoundMode,
+              showPill: config.showPill,
+              showScale: config.showScale,
+              showRecommendation: config.showRecommendation,
+              showSummary: config.showSummary
+            };
+            log('SizeRecommender.init() options:', JSON.stringify(initOptions, null, 2));
 
-          liveContainer.dataset.plDemoSgRequested = 'true';
-          liveContainer.dataset.plDemoSgRendered = 'true';
+            const widget = scopedWindow.SizeRecommender!.init(initOptions);
+            log('SizeRecommender.init() returned:', widget);
+
+            liveContainer.dataset.plDemoSgRequested = 'true';
+            liveContainer.dataset.plDemoSgRendered = 'true';
+            log('Render complete. Container children:', liveContainer.childNodes.length);
+          } catch (initError) {
+            logError('SizeRecommender.init() threw:', initError);
+            showContainerError(
+              `SizeRecommender.init() threw: ${initError instanceof Error ? initError.message : String(initError)}`
+            );
+          }
         })
         .catch((error: unknown) => {
+          logError('ensureScript chain error:', error);
           showContainerError(
             error instanceof Error
               ? error.message

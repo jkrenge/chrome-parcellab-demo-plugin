@@ -27,10 +27,14 @@ export const DEFAULT_DEMO_DRAFT_CONFIG: DemoDraftConfig = {
   portalCode: '',
   showArticleList: true,
   productId: '',
-  selectionGuideAppearance: 'neutral',
-  selectionGuideDensity: 'compact',
-  selectionGuideSurface: 'subtle',
+  selectionGuideAppearance: 'colored',
+  selectionGuideDensity: 'comfortable',
+  selectionGuideSurface: 'plain',
   selectionGuideNotFoundMode: 'true-to-size',
+  selectionGuideShowPill: true,
+  selectionGuideShowScale: true,
+  selectionGuideShowRecommendation: true,
+  selectionGuideShowSummary: true,
   selectionGuideMarginTop: 0,
   selectionGuideMarginBottom: 0,
   textReplaceText: ''
@@ -52,7 +56,8 @@ export const SELECTION_GUIDE_APPEARANCE_OPTIONS: Array<{
   value: SelectionGuideAppearance;
 }> = [
   { label: 'Neutral', value: 'neutral' },
-  { label: 'Colored', value: 'colored' }
+  { label: 'Colored', value: 'colored' },
+  { label: 'Alert', value: 'alert' }
 ];
 
 export const SELECTION_GUIDE_DENSITY_OPTIONS: Array<{
@@ -76,7 +81,8 @@ export const SELECTION_GUIDE_NOT_FOUND_OPTIONS: Array<{
   value: SelectionGuideNotFoundMode;
 }> = [
   { label: 'True to Size', value: 'true-to-size' },
-  { label: 'Empty', value: 'empty' }
+  { label: 'Empty', value: 'empty' },
+  { label: 'Hidden', value: 'hidden' }
 ];
 
 export type SelectionGuideSample = {
@@ -144,10 +150,14 @@ export function normalizeDemoConfig(
       accountId: sg.accountId,
       productId: sg.productId,
       locale: sg.locale,
-      appearance: sg.appearance ?? 'neutral',
-      density: sg.density ?? 'compact',
-      surface: sg.surface ?? 'subtle',
+      appearance: sg.appearance ?? 'colored',
+      density: sg.density ?? 'comfortable',
+      surface: sg.surface ?? 'plain',
       notFoundMode: sg.notFoundMode ?? 'true-to-size',
+      showPill: sg.showPill !== false,
+      showScale: sg.showScale !== false,
+      showRecommendation: sg.showRecommendation !== false,
+      showSummary: sg.showSummary !== false,
       marginTop: sg.marginTop ?? 0,
       marginBottom: sg.marginBottom ?? 0
     } satisfies SelectionGuideConfig;
@@ -217,13 +227,25 @@ export function normalizeDemoDraftConfig(
     showArticleList: value?.showArticleList !== false,
     productId: typeof value?.productId === 'string' ? value.productId : '',
     selectionGuideAppearance:
-      value?.selectionGuideAppearance === 'colored' ? 'colored' : 'neutral',
+      value?.selectionGuideAppearance === 'neutral'
+        ? 'neutral'
+        : value?.selectionGuideAppearance === 'alert'
+          ? 'alert'
+          : 'colored',
     selectionGuideDensity:
-      value?.selectionGuideDensity === 'comfortable' ? 'comfortable' : 'compact',
+      value?.selectionGuideDensity === 'compact' ? 'compact' : 'comfortable',
     selectionGuideSurface:
-      value?.selectionGuideSurface === 'plain' ? 'plain' : 'subtle',
+      value?.selectionGuideSurface === 'subtle' ? 'subtle' : 'plain',
     selectionGuideNotFoundMode:
-      value?.selectionGuideNotFoundMode === 'empty' ? 'empty' : 'true-to-size',
+      value?.selectionGuideNotFoundMode === 'empty'
+        ? 'empty'
+        : value?.selectionGuideNotFoundMode === 'hidden'
+          ? 'hidden'
+          : 'true-to-size',
+    selectionGuideShowPill: value?.selectionGuideShowPill !== false,
+    selectionGuideShowScale: value?.selectionGuideShowScale !== false,
+    selectionGuideShowRecommendation: value?.selectionGuideShowRecommendation !== false,
+    selectionGuideShowSummary: value?.selectionGuideShowSummary !== false,
     selectionGuideMarginTop:
       typeof value?.selectionGuideMarginTop === 'number' ? value.selectionGuideMarginTop : 0,
     selectionGuideMarginBottom:
@@ -254,6 +276,10 @@ export function buildDemoConfigFromDraft(
       density: draft.selectionGuideDensity,
       surface: draft.selectionGuideSurface,
       notFoundMode: draft.selectionGuideNotFoundMode,
+      showPill: draft.selectionGuideShowPill,
+      showScale: draft.selectionGuideShowScale,
+      showRecommendation: draft.selectionGuideShowRecommendation,
+      showSummary: draft.selectionGuideShowSummary,
       marginTop: draft.selectionGuideMarginTop,
       marginBottom: draft.selectionGuideMarginBottom
     };
@@ -304,6 +330,10 @@ export function mergeDemoConfigIntoDraft(
       selectionGuideDensity: config.density,
       selectionGuideSurface: config.surface,
       selectionGuideNotFoundMode: config.notFoundMode,
+      selectionGuideShowPill: config.showPill,
+      selectionGuideShowScale: config.showScale,
+      selectionGuideShowRecommendation: config.showRecommendation,
+      selectionGuideShowSummary: config.showSummary,
       selectionGuideMarginTop: config.marginTop,
       selectionGuideMarginBottom: config.marginBottom
     };

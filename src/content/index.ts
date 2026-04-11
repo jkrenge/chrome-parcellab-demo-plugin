@@ -715,7 +715,7 @@ function renderSelectionGuideRule(
   }
 
   const containerId = `parcellab-selection-guide-${rule.id}`;
-  const renderKey = `${demoConfig.accountId}:${demoConfig.productId}:${demoConfig.locale}:${demoConfig.appearance}:${demoConfig.density}:${demoConfig.surface}:${demoConfig.notFoundMode}:${demoConfig.marginTop}:${demoConfig.marginBottom}`;
+  const renderKey = `${demoConfig.accountId}:${demoConfig.productId}:${demoConfig.locale}:${demoConfig.appearance}:${demoConfig.density}:${demoConfig.surface}:${demoConfig.notFoundMode}:${String(demoConfig.showPill)}:${String(demoConfig.showScale)}:${String(demoConfig.showRecommendation)}:${String(demoConfig.showSummary)}:${demoConfig.marginTop}:${demoConfig.marginBottom}`;
 
   let container = document.getElementById(containerId);
 
