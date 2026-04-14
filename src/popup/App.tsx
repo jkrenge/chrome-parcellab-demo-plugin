@@ -615,7 +615,7 @@ export default function App() {
         {/* Returns Portal */}
         {draftConfig.plugin === 'returns-portal' ? (
           <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <label className="space-y-1">
                 <span className="text-[11px] font-medium text-slate-500">Account Name or ID</span>
                 <input
@@ -644,6 +644,28 @@ export default function App() {
                   }
                 />
               </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Language</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.lang}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        lang: event.target.value as SupportedLanguage
+                      }))
+                    }
+                  >
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -668,7 +690,7 @@ export default function App() {
         {draftConfig.plugin === 'selection-guide' ? (
           <>
             <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <label className="space-y-1">
                   <span className="text-[11px] font-medium text-slate-500">Account ID</span>
                   <input
@@ -696,6 +718,28 @@ export default function App() {
                       }))
                     }
                   />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Language</span>
+                  <div className="relative">
+                    <select
+                      className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      value={draftConfig.lang}
+                      onChange={(event) =>
+                        updateDraftConfig((current) => ({
+                          ...current,
+                          lang: event.target.value as SupportedLanguage
+                        }))
+                      }
+                    >
+                      {LANGUAGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <SelectChevronSmall />
+                  </div>
                 </label>
               </div>
               <div className="flex gap-2">
