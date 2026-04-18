@@ -144,7 +144,7 @@ function buildChatWindow(): HTMLElement {
     const bubble = document.createElement('div');
     bubble.className = `message ${msg.role}`;
     if (msg.role === 'assistant') {
-      bubble.innerHTML = renderMarkdown(msg.content);
+      bubble.innerHTML = renderRichText(msg.content);
     } else {
       bubble.textContent = msg.content;
     }
@@ -288,26 +288,91 @@ function sendSvg(): string {
   return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 }
 
-function renderMarkdown(text: string): string {
-  // Escape HTML
-  let html = text
+function renderRichText(text: string): string {
+  const normalized = text.replace(/\r\n/g, '\n').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  const blocks: string[] = [];
+  let paragraphLines: string[] = [];
+  let listItems: string[] = [];
+  let listType: 'ul' | 'ol' | null = null;
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+
+    const content = paragraphLines.map(renderInlineMarkdown).join('<br>');
+    blocks.push(`<p>${content}</p>`);
+    paragraphLines = [];
+  };
+
+  const flushList = () => {
+    if (listType === null || listItems.length === 0) {
+      return;
+    }
+
+    blocks.push(`<${listType}>${listItems.join('')}</${listType}>`);
+    listItems = [];
+    listType = null;
+  };
+
+  for (const line of normalized.split('\n')) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const unorderedMatch = /^[-*]\s+(.+)$/.exec(trimmed);
+    const orderedMatch = /^\d+\.\s+(.+)$/.exec(trimmed);
+
+    if (unorderedMatch || orderedMatch) {
+      flushParagraph();
+
+      const nextListType = orderedMatch ? 'ol' : 'ul';
+      if (listType && listType !== nextListType) {
+        flushList();
+      }
+
+      listType = nextListType;
+      listItems.push(
+        `<li>${renderInlineMarkdown(
+          (orderedMatch ?? unorderedMatch)?.[1] ?? ''
+        )}</li>`
+      );
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks.join('');
+}
+
+function renderInlineMarkdown(text: string): string {
+  let html = escapeHtml(text);
+
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  return html;
+}
+
+function escapeHtml(text: string): string {
+  return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-
-  // Bold: **text**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // Italic: *text* (but not inside bold)
-  html = html.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
-
-  // Inline code: `code`
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // Line breaks
-  html = html.replace(/\n/g, '<br>');
-
-  return html;
 }
 
 function getStyles(): string {
@@ -494,10 +559,36 @@ function getStyles(): string {
       background: #f1f5f9;
       color: #1e293b;
       border-bottom-left-radius: 4px;
+      white-space: normal;
     }
 
     .message.assistant strong {
       font-weight: 600;
+    }
+
+    .message.assistant p,
+    .message.assistant ul,
+    .message.assistant ol {
+      margin: 0;
+    }
+
+    .message.assistant ul,
+    .message.assistant ol {
+      padding-left: 18px;
+    }
+
+    .message.assistant p + p,
+    .message.assistant p + ul,
+    .message.assistant p + ol,
+    .message.assistant ul + p,
+    .message.assistant ol + p,
+    .message.assistant ul + ul,
+    .message.assistant ol + ol {
+      margin-top: 10px;
+    }
+
+    .message.assistant li + li {
+      margin-top: 4px;
     }
 
     .message.assistant code {

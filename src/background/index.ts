@@ -878,13 +878,20 @@ async function handleChatbotExecute(
   }
 }
 
+type V3MessageData = {
+  answer?: string;
+  email_summary?: string;
+  is_query?: boolean;
+  sender_email?: string;
+};
+
 type V3Message = {
   id?: string;
   type: string;
   query?: string;
   text?: string;
   response?: string;
-  data?: { answer?: string };
+  data?: V3MessageData;
 };
 
 type V3ThreadResponse = {
@@ -964,7 +971,7 @@ function extractV3Messages(data: V3ThreadResponse): ChatMessage[] {
         timestamp: new Date().toISOString()
       });
     } else if (msg.type === 'response') {
-      const content = msg.response ?? msg.data?.answer ?? '';
+      const content = getAssistantMessageContent(msg);
       if (content) {
         result.push({
           id: msg.id ?? crypto.randomUUID(),
@@ -977,4 +984,35 @@ function extractV3Messages(data: V3ThreadResponse): ChatMessage[] {
   }
 
   return result;
+}
+
+function getAssistantMessageContent(message: V3Message): string {
+  // `data.answer` is the cleaner customer-facing reply. The top-level
+  // `response` field can include verbose fallback copy and internal guidance.
+  return firstNonEmptyMessageValue(
+    message.data?.answer,
+    message.response,
+    message.text
+  );
+}
+
+function firstNonEmptyMessageValue(
+  ...values: Array<string | undefined>
+): string {
+  for (const value of values) {
+    const normalized = normalizeMessageValue(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return '';
+}
+
+function normalizeMessageValue(value?: string): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.replace(/\r\n/g, '\n').trim();
 }
