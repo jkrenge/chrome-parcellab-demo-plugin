@@ -476,11 +476,53 @@ async function renderReturnsPortal(
         container.replaceChildren(wrapper);
       };
 
+      const fixPortalIframeMinHeight = () => {
+        const portal = container.querySelector(
+          'pl-returns-portal'
+        ) as HTMLElement | null;
+        const shadowRoot = portal?.shadowRoot;
+        if (!shadowRoot) {
+          return;
+        }
+
+        const STYLE_ID = 'pl-demo-returns-iframe-min-height-fix';
+        if (!shadowRoot.getElementById(STYLE_ID)) {
+          const style = document.createElement('style');
+          style.id = STYLE_ID;
+          style.textContent = 'iframe { min-height: 0 !important; }';
+          shadowRoot.appendChild(style);
+        }
+
+        const applyFix = () => {
+          shadowRoot
+            .querySelectorAll<HTMLIFrameElement>('iframe')
+            .forEach((iframe) => {
+              iframe.style.setProperty('min-height', '0', 'important');
+            });
+        };
+
+        applyFix();
+
+        if (portal.dataset.plDemoMinHeightObserver === 'true') {
+          return;
+        }
+
+        const observer = new MutationObserver(applyFix);
+        observer.observe(shadowRoot, {
+          attributes: true,
+          attributeFilter: ['style'],
+          childList: true,
+          subtree: true
+        });
+        portal.dataset.plDemoMinHeightObserver = 'true';
+      };
+
       const renderKey = `${config.accountName}:${config.portalCode}:${config.lang}`;
       if (
         container.dataset.plDemoReturnsKey === renderKey &&
         container.dataset.plDemoReturnsRendered === 'true'
       ) {
+        fixPortalIframeMinHeight();
         return { ok: true };
       }
 
@@ -568,6 +610,7 @@ async function renderReturnsPortal(
 
           await customElements.whenDefined('pl-returns-portal');
           ensurePortalNode();
+          fixPortalIframeMinHeight();
           liveContainer.dataset.plDemoReturnsRequested = 'true';
           liveContainer.dataset.plDemoReturnsRendered = 'true';
         })
