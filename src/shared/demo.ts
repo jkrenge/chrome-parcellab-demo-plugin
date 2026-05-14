@@ -216,14 +216,13 @@ export type PromiseSample = {
   label: string;
   destinationCountry: string;
   postalCode: string;
-  locale: SupportedLanguage;
 };
 
 export const PROMISE_SAMPLES: PromiseSample[] = [
-  { label: 'DE, no zip', destinationCountry: 'DEU', postalCode: '', locale: 'de' },
-  { label: 'DE, w/ zip', destinationCountry: 'DEU', postalCode: '81371', locale: 'de' },
-  { label: 'US, no zip', destinationCountry: 'USA', postalCode: '', locale: 'en' },
-  { label: 'US, w/ zip', destinationCountry: 'USA', postalCode: '10038', locale: 'en' }
+  { label: 'DE, no zip', destinationCountry: 'DEU', postalCode: '' },
+  { label: 'DE, w/ zip', destinationCountry: 'DEU', postalCode: '81371' },
+  { label: 'US, no zip', destinationCountry: 'USA', postalCode: '' },
+  { label: 'US, w/ zip', destinationCountry: 'USA', postalCode: '10038' }
 ];
 
 export const SELECTION_GUIDE_SAMPLES: SelectionGuideSample[] = [

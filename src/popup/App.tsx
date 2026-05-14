@@ -796,8 +796,7 @@ export default function App() {
                       updateDraftConfig((current) => ({
                         ...current,
                         promiseDestinationCountry: sample.destinationCountry,
-                        promisePostalCode: sample.postalCode,
-                        lang: sample.locale
+                        promisePostalCode: sample.postalCode
                       }))
                     }
                   >
