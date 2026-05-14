@@ -8,6 +8,7 @@ import type {
   ChatbotExecuteRequest,
   ChatbotResponse,
   ChatMessage,
+  PromiseDemoConfig,
   ReturnsPortalConfig,
   SelectionGuideConfig,
   TrackAndTraceConfig
@@ -137,6 +138,23 @@ chrome.runtime.onMessage.addListener(
 
     if (message?.type === 'RENDER_RETURNS_PORTAL' && sender.tab?.id) {
       void renderReturnsPortal(
+        sender.tab.id,
+        message.containerId,
+        message.demoConfig
+      )
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) =>
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          })
+        );
+
+      return true;
+    }
+
+    if (message?.type === 'RENDER_PROMISE' && sender.tab?.id) {
+      void renderPromise(
         sender.tab.id,
         message.containerId,
         message.demoConfig
@@ -628,6 +646,268 @@ async function renderReturnsPortal(
 
   if (!result?.ok) {
     throw new Error(result?.error ?? 'Returns Portal render failed.');
+  }
+}
+
+async function renderPromise(
+  tabId: number,
+  containerId: string,
+  demoConfig: PromiseDemoConfig
+): Promise<void> {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [containerId, demoConfig] as [string, PromiseDemoConfig],
+    func: (
+      targetContainerId: string,
+      config: PromiseDemoConfig
+    ) => {
+      const SCRIPT_ID = 'pl-demo-promise-script';
+      const SCRIPT_SRC =
+        'https://cdn.parcellab.com/playground/promise-ui/dist/promise.iife.js';
+
+      type PromiseWidgetInstance = {
+        update: (options: Record<string, unknown>) => void;
+        destroy: () => void;
+      };
+
+      type PromiseWindow = Window & {
+        __plDemoPromiseLoaderPromise__?: Promise<void>;
+        __plDemoPromiseInstances__?: Map<string, PromiseWidgetInstance>;
+        DeliveryPromise?: {
+          init: (options: Record<string, unknown>) => PromiseWidgetInstance;
+        };
+      };
+
+      const scopedWindow = window as PromiseWindow;
+      const container = document.getElementById(targetContainerId);
+      if (!container) {
+        return { ok: false, error: 'Promise container not found.' };
+      }
+
+      const showContainerError = (message: string) => {
+        container.dataset.plDemoPromiseRequested = 'false';
+        container.dataset.plDemoPromiseRendered = 'false';
+
+        const wrapper = document.createElement('div');
+        wrapper.style.margin = '24px auto';
+        wrapper.style.maxWidth = '560px';
+        wrapper.style.padding = '16px 18px';
+        wrapper.style.border = '1px solid rgba(239, 68, 68, 0.25)';
+        wrapper.style.borderRadius = '12px';
+        wrapper.style.background = '#fef2f2';
+        wrapper.style.color = '#991b1b';
+        wrapper.style.font = '500 14px/1.5 system-ui, sans-serif';
+        wrapper.textContent = message;
+        container.replaceChildren(wrapper);
+      };
+
+      const parseFallbackDays = (
+        raw: string
+      ): number | [number, number] | undefined => {
+        const trimmed = raw.trim();
+        if (!trimmed) return undefined;
+        const range = trimmed.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+        if (range) {
+          const min = Number(range[1]);
+          const max = Number(range[2]);
+          if (Number.isFinite(min) && Number.isFinite(max) && min <= max) {
+            return [min, max];
+          }
+          return undefined;
+        }
+        const single = Number(trimmed);
+        return Number.isFinite(single) && single >= 0 ? single : undefined;
+      };
+
+      const buildInitOptions = (target: HTMLElement) => {
+        const options: Record<string, unknown> = {
+          target,
+          accountId: config.accountId,
+          destinationCountry: config.destinationCountry,
+          postalCode: config.postalCode,
+          locale: config.locale,
+          layout: config.layout,
+          dateMode: config.dateMode,
+          zipPicker: config.zipPicker,
+          showCutoff: config.showCutoff,
+          icon: config.icon,
+          confidence: config.confidence,
+          dateFormat: config.dateFormat,
+          showCarrier: config.showCarrier,
+          requireZip: config.requireZip,
+          selectionReferenceDate: config.selectionReferenceDate,
+          selectionPick: config.selectionPick
+        };
+
+        if (config.courier) options.courier = config.courier;
+        if (config.serviceLevel) options.serviceLevel = config.serviceLevel;
+        if (config.warehouse) options.warehouse = config.warehouse;
+
+        const fallback = parseFallbackDays(config.fallbackDays);
+        if (fallback !== undefined) options.fallbackDays = fallback;
+
+        return options;
+      };
+
+      const renderKey = [
+        config.accountId,
+        config.destinationCountry,
+        config.postalCode,
+        config.locale,
+        config.layout,
+        config.dateMode,
+        config.zipPicker,
+        config.showCutoff,
+        config.icon,
+        config.confidence,
+        config.dateFormat,
+        config.showCarrier,
+        String(config.requireZip),
+        config.courier,
+        config.serviceLevel,
+        config.warehouse,
+        config.selectionReferenceDate,
+        config.selectionPick,
+        config.fallbackDays
+      ].join('|');
+
+      if (
+        container.dataset.plDemoPromiseKey === renderKey &&
+        container.dataset.plDemoPromiseRendered === 'true'
+      ) {
+        return { ok: true };
+      }
+
+      container.dataset.plDemoPromiseKey = renderKey;
+      container.dataset.plDemoPromiseRequested = 'running';
+      container.dataset.plDemoPromiseRendered = 'false';
+
+      const ensureScript = async () => {
+        if (typeof scopedWindow.DeliveryPromise?.init === 'function') {
+          return;
+        }
+
+        if (scopedWindow.__plDemoPromiseLoaderPromise__) {
+          return scopedWindow.__plDemoPromiseLoaderPromise__;
+        }
+
+        scopedWindow.__plDemoPromiseLoaderPromise__ = new Promise<void>(
+          (resolve, reject) => {
+            const existingScript = document.getElementById(
+              SCRIPT_ID
+            ) as HTMLScriptElement | null;
+
+            if (existingScript) {
+              if (existingScript.dataset.plDemoLoaded === 'true') {
+                resolve();
+                return;
+              }
+
+              if (typeof scopedWindow.DeliveryPromise?.init === 'function') {
+                existingScript.dataset.plDemoLoaded = 'true';
+                resolve();
+                return;
+              }
+
+              existingScript.addEventListener('load', () => resolve(), {
+                once: true
+              });
+              existingScript.addEventListener(
+                'error',
+                () => reject(new Error('Could not load Promise UI script (existing tag error).')),
+                { once: true }
+              );
+              return;
+            }
+
+            const scriptTag = document.createElement('script');
+            scriptTag.id = SCRIPT_ID;
+            scriptTag.async = true;
+            scriptTag.src = SCRIPT_SRC;
+            scriptTag.onload = () => {
+              scriptTag.dataset.plDemoLoaded = 'true';
+              resolve();
+            };
+            scriptTag.onerror = () =>
+              reject(
+                new Error(
+                  `Could not load Promise UI script from ${SCRIPT_SRC}. Check the page CSP.`
+                )
+              );
+            document.head.appendChild(scriptTag);
+          }
+        );
+
+        return scopedWindow.__plDemoPromiseLoaderPromise__.catch((error) => {
+          scopedWindow.__plDemoPromiseLoaderPromise__ = undefined;
+          throw error;
+        });
+      };
+
+      void ensureScript()
+        .then(() => {
+          const liveContainer = document.getElementById(targetContainerId);
+          if (!liveContainer) {
+            return;
+          }
+
+          if (typeof scopedWindow.DeliveryPromise?.init !== 'function') {
+            showContainerError(
+              'Promise UI loaded but DeliveryPromise.init() not found.'
+            );
+            return;
+          }
+
+          if (!scopedWindow.__plDemoPromiseInstances__) {
+            scopedWindow.__plDemoPromiseInstances__ = new Map();
+          }
+
+          const previousInstance =
+            scopedWindow.__plDemoPromiseInstances__.get(targetContainerId);
+          if (previousInstance) {
+            try {
+              previousInstance.destroy();
+            } catch {
+              // ignore destroy errors
+            }
+            scopedWindow.__plDemoPromiseInstances__.delete(targetContainerId);
+          }
+
+          liveContainer.replaceChildren();
+
+          try {
+            const instance = scopedWindow.DeliveryPromise!.init(
+              buildInitOptions(liveContainer)
+            );
+            scopedWindow.__plDemoPromiseInstances__.set(
+              targetContainerId,
+              instance
+            );
+            liveContainer.dataset.plDemoPromiseRequested = 'true';
+            liveContainer.dataset.plDemoPromiseRendered = 'true';
+          } catch (initError) {
+            showContainerError(
+              `DeliveryPromise.init() threw: ${
+                initError instanceof Error ? initError.message : String(initError)
+              }`
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          showContainerError(
+            error instanceof Error
+              ? error.message
+              : 'Promise UI failed to render.'
+          );
+        });
+
+      return { ok: true };
+    }
+  });
+
+  if (!result?.ok) {
+    throw new Error(result?.error ?? 'Promise UI render failed.');
   }
 }
 

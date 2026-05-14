@@ -1,10 +1,26 @@
 export type ModificationAction = 'hide' | 'replace';
-export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'selection-guide' | 'chatbot' | 'text-replace';
+export type DemoPluginKind = 'track-and-trace' | 'returns-portal' | 'promise' | 'selection-guide' | 'chatbot' | 'text-replace';
 
 export type SelectionGuideAppearance = 'neutral' | 'colored' | 'alert';
 export type SelectionGuideDensity = 'compact' | 'comfortable';
 export type SelectionGuideSurface = 'subtle' | 'plain';
 export type SelectionGuideNotFoundMode = 'empty' | 'true-to-size' | 'hidden';
+
+export type PromiseLayout = 'text' | 'card' | 'badge';
+export type PromiseDateMode = 'from' | 'on' | 'by' | 'range';
+export type PromiseZipPicker = 'none' | 'inline' | 'link';
+export type PromiseShowCutoff = 'auto' | 'always' | 'never' | 'express-only';
+export type PromiseIcon = 'none' | 'truck' | 'calendar';
+export type PromiseConfidence = 'auto' | 'estimated' | 'guaranteed';
+export type PromiseDateFormat =
+  | 'long'
+  | 'longWithYear'
+  | 'short'
+  | 'shortWithYear'
+  | 'relative';
+export type PromiseShowCarrier = 'none' | 'inline';
+export type PromiseSelectionReferenceDate = 'earliest' | 'latest' | 'mostLikely';
+export type PromiseSelectionPick = 'earliest' | 'latest';
 
 export type SupportedLanguage =
   | 'en'
@@ -27,6 +43,29 @@ export type ReturnsPortalConfig = {
   accountName: string;
   portalCode: string;
   lang: SupportedLanguage;
+};
+
+export type PromiseDemoConfig = {
+  kind: 'promise';
+  accountId: string;
+  destinationCountry: string;
+  postalCode: string;
+  locale: SupportedLanguage;
+  layout: PromiseLayout;
+  dateMode: PromiseDateMode;
+  zipPicker: PromiseZipPicker;
+  showCutoff: PromiseShowCutoff;
+  icon: PromiseIcon;
+  confidence: PromiseConfidence;
+  dateFormat: PromiseDateFormat;
+  showCarrier: PromiseShowCarrier;
+  requireZip: boolean;
+  courier: string;
+  serviceLevel: string;
+  warehouse: string;
+  selectionReferenceDate: PromiseSelectionReferenceDate;
+  selectionPick: PromiseSelectionPick;
+  fallbackDays: string;
 };
 
 export type SelectionGuideConfig = {
@@ -58,7 +97,13 @@ export type TextReplaceConfig = {
   text: string;
 };
 
-export type DemoConfig = TrackAndTraceConfig | ReturnsPortalConfig | SelectionGuideConfig | ChatbotDemoConfig | TextReplaceConfig;
+export type DemoConfig =
+  | TrackAndTraceConfig
+  | ReturnsPortalConfig
+  | PromiseDemoConfig
+  | SelectionGuideConfig
+  | ChatbotDemoConfig
+  | TextReplaceConfig;
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;
@@ -77,6 +122,23 @@ export type DemoDraftConfig = {
   selectionGuideShowSummary: boolean;
   selectionGuideMarginTop: number;
   selectionGuideMarginBottom: number;
+  promiseDestinationCountry: string;
+  promisePostalCode: string;
+  promiseLayout: PromiseLayout;
+  promiseDateMode: PromiseDateMode;
+  promiseZipPicker: PromiseZipPicker;
+  promiseShowCutoff: PromiseShowCutoff;
+  promiseIcon: PromiseIcon;
+  promiseConfidence: PromiseConfidence;
+  promiseDateFormat: PromiseDateFormat;
+  promiseShowCarrier: PromiseShowCarrier;
+  promiseRequireZip: boolean;
+  promiseCourier: string;
+  promiseServiceLevel: string;
+  promiseWarehouse: string;
+  promiseSelectionReferenceDate: PromiseSelectionReferenceDate;
+  promiseSelectionPick: PromiseSelectionPick;
+  promiseFallbackDays: string;
   textReplaceText: string;
 };
 
@@ -149,6 +211,11 @@ export type BackgroundRequest =
       type: 'RENDER_RETURNS_PORTAL';
       containerId: string;
       demoConfig: ReturnsPortalConfig;
+    }
+  | {
+      type: 'RENDER_PROMISE';
+      containerId: string;
+      demoConfig: PromiseDemoConfig;
     }
   | {
       type: 'RENDER_SELECTION_GUIDE';

@@ -275,6 +275,11 @@ function createController(): Controller {
       return;
     }
 
+    if (demoConfig?.kind === 'promise') {
+      renderPromiseRule(element, rule);
+      return;
+    }
+
     const state = appliedStates.get(rule.id);
     if (!state) {
       appliedStates.set(rule.id, {
@@ -967,6 +972,121 @@ function renderReturnsPortalRule(
         );
       }
     });
+}
+
+function renderPromiseRule(
+  element: HTMLElement,
+  rule: SavedModification
+): void {
+  const demoConfig = normalizeDemoConfig(rule.demoConfig);
+  if (demoConfig?.kind !== 'promise') {
+    return;
+  }
+
+  const containerId = `parcellab-promise-${rule.id}`;
+  const renderKey = [
+    demoConfig.accountId,
+    demoConfig.destinationCountry,
+    demoConfig.postalCode,
+    demoConfig.locale,
+    demoConfig.layout,
+    demoConfig.dateMode,
+    demoConfig.zipPicker,
+    demoConfig.showCutoff,
+    demoConfig.icon,
+    demoConfig.confidence,
+    demoConfig.dateFormat,
+    demoConfig.showCarrier,
+    String(demoConfig.requireZip),
+    demoConfig.courier,
+    demoConfig.serviceLevel,
+    demoConfig.warehouse,
+    demoConfig.selectionReferenceDate,
+    demoConfig.selectionPick,
+    demoConfig.fallbackDays
+  ].join('|');
+
+  let container = document.getElementById(containerId);
+
+  if (!container) {
+    container = document.createElement('div');
+    container.id = containerId;
+    container.dataset.plDemoPromiseRoot = 'true';
+    container.dataset.plDemoPromiseKey = renderKey;
+    container.style.position = 'relative';
+    container.style.marginTop = '8px';
+
+    const loadingCopy = document.createElement('div');
+    loadingCopy.dataset.plDemoPromisePlaceholder = 'true';
+    loadingCopy.style.padding = '10px 14px';
+    loadingCopy.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+    loadingCopy.style.borderRadius = '10px';
+    loadingCopy.style.background = '#f8fafc';
+    loadingCopy.style.color = '#334155';
+    loadingCopy.style.font = '500 13px/1.5 system-ui, sans-serif';
+    loadingCopy.textContent = 'Loading delivery promise…';
+    container.appendChild(loadingCopy);
+
+    element.insertAdjacentElement('afterend', container);
+
+    appliedStates.set(rule.id, {
+      action: 'insert-after',
+      element,
+      insertedNode: container
+    });
+  }
+
+  if (
+    container.dataset.plDemoPromiseKey === renderKey &&
+    (container.dataset.plDemoPromiseRequested === 'pending' ||
+      container.dataset.plDemoPromiseRequested === 'running' ||
+      container.dataset.plDemoPromiseRendered === 'true')
+  ) {
+    return;
+  }
+
+  container.dataset.plDemoPromiseKey = renderKey;
+  container.dataset.plDemoPromiseRequested = 'pending';
+  container.dataset.plDemoPromiseRendered = 'false';
+
+  void chrome.runtime
+    .sendMessage({
+      type: 'RENDER_PROMISE',
+      containerId,
+      demoConfig
+    })
+    .then((response?: ContentResponse) => {
+      const liveContainer = document.getElementById(containerId);
+      if (!liveContainer) {
+        return;
+      }
+
+      if (!response?.ok) {
+        liveContainer.dataset.plDemoPromiseRequested = 'false';
+        liveContainer.dataset.plDemoPromiseRendered = 'false';
+        showPromiseError(
+          liveContainer,
+          response?.error ?? 'parcelLab Promise failed to render.'
+        );
+      }
+    })
+    .catch((error: unknown) => {
+      const liveContainer = document.getElementById(containerId);
+      if (liveContainer) {
+        liveContainer.dataset.plDemoPromiseRequested = 'false';
+        liveContainer.dataset.plDemoPromiseRendered = 'false';
+        showPromiseError(
+          liveContainer,
+          error instanceof Error
+            ? error.message
+            : 'parcelLab Promise failed to render.'
+        );
+      }
+    });
+}
+
+function showPromiseError(container: HTMLElement, message: string): void {
+  showPluginError(container, message, 'pl-demo-promise-error');
 }
 
 function showTrackAndTraceError(

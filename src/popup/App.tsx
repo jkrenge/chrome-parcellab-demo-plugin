@@ -8,6 +8,17 @@ import {
   LANGUAGE_OPTIONS,
   mergeDemoConfigIntoDraft,
   normalizeDemoDraftConfig,
+  PROMISE_CONFIDENCE_OPTIONS,
+  PROMISE_DATE_FORMAT_OPTIONS,
+  PROMISE_DATE_MODE_OPTIONS,
+  PROMISE_ICON_OPTIONS,
+  PROMISE_LAYOUT_OPTIONS,
+  PROMISE_SAMPLES,
+  PROMISE_SELECTION_PICK_OPTIONS,
+  PROMISE_SELECTION_REFERENCE_DATE_OPTIONS,
+  PROMISE_SHOW_CARRIER_OPTIONS,
+  PROMISE_SHOW_CUTOFF_OPTIONS,
+  PROMISE_ZIP_PICKER_OPTIONS,
   SELECTION_GUIDE_APPEARANCE_OPTIONS,
   SELECTION_GUIDE_DENSITY_OPTIONS,
   SELECTION_GUIDE_NOT_FOUND_OPTIONS,
@@ -39,6 +50,16 @@ import type {
   DemoPluginKind,
   ContentResponse,
   ModificationAction,
+  PromiseConfidence,
+  PromiseDateFormat,
+  PromiseDateMode,
+  PromiseIcon,
+  PromiseLayout,
+  PromiseSelectionPick,
+  PromiseSelectionReferenceDate,
+  PromiseShowCarrier,
+  PromiseShowCutoff,
+  PromiseZipPicker,
   SavedModification,
   SelectionGuideAppearance,
   SelectionGuideDensity,
@@ -50,6 +71,7 @@ import type {
 const PLUGIN_DOCS_URLS: Partial<Record<DemoPluginKind, string>> = {
   'track-and-trace': 'https://docs.parcellab.com/docs/developers/status-updates/order-status-page-configuration',
   'returns-portal': 'https://docs.parcellab.com/docs/developers/returns/v2',
+  'promise': 'https://docs.parcellab.com/docs/developers/promise/api',
   'selection-guide': 'https://docs.parcellab.com/docs/developers/size-recommender/size-recommender/ui-plugin',
   'chatbot': 'https://docs.parcellab.com/docs/developers/agents/agents'
 };
@@ -306,30 +328,33 @@ export default function App() {
       void saveDemoDraftConfig(next);
 
       if (next.plugin === 'selection-guide') {
-        void refreshSelectionGuideRules(next);
+        void refreshLiveRules(next, 'selection-guide');
+      } else if (next.plugin === 'promise') {
+        void refreshLiveRules(next, 'promise');
       }
 
       return next;
     });
   }
 
-  async function refreshSelectionGuideRules(
-    draft: DemoDraftConfig
+  async function refreshLiveRules(
+    draft: DemoDraftConfig,
+    kind: 'selection-guide' | 'promise'
   ): Promise<void> {
-    const selectionGuideRules = allRules.filter(
+    const matchingRules = allRules.filter(
       (rule) =>
-        rule.demoConfig?.kind === 'selection-guide' &&
+        rule.demoConfig?.kind === kind &&
         resolveRuleScopeUrl(rule) === activeTab.normalizedScopeUrl
     );
 
-    if (selectionGuideRules.length === 0 || !activeTab.id) {
+    if (matchingRules.length === 0 || !activeTab.id) {
       return;
     }
 
     const newConfig = buildDemoConfigFromDraft(draft);
     const updatedRules: SavedModification[] = [];
 
-    for (const rule of selectionGuideRules) {
+    for (const rule of matchingRules) {
       const updated = { ...rule, demoConfig: newConfig };
       await saveModification(updated);
       updatedRules.push(updated);
@@ -345,7 +370,7 @@ export default function App() {
     try {
       await chrome.tabs.sendMessage(activeTab.id, {
         type: 'RESTORE_RULES',
-        ruleIds: selectionGuideRules.map((r) => r.id)
+        ruleIds: matchingRules.map((r) => r.id)
       });
     } catch {
       // Content script may not be loaded.
@@ -684,6 +709,423 @@ export default function App() {
               </button>
             </div>
           </section>
+        ) : null}
+
+        {/* Promise */}
+        {draftConfig.plugin === 'promise' ? (
+          <>
+            <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
+              <div className="grid grid-cols-4 gap-2">
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Account ID</span>
+                  <input
+                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    inputMode="numeric"
+                    maxLength={7}
+                    placeholder="1612197"
+                    value={draftConfig.accountId}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        accountId: event.target.value.replace(/\D+/g, '').slice(0, 7)
+                      }))
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Country</span>
+                  <input
+                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs uppercase text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    maxLength={3}
+                    placeholder="DEU"
+                    value={draftConfig.promiseDestinationCountry}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseDestinationCountry: event.target.value
+                          .replace(/[^A-Za-z]/g, '')
+                          .slice(0, 3)
+                          .toUpperCase()
+                      }))
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Postal code</span>
+                  <input
+                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="optional"
+                    value={draftConfig.promisePostalCode}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promisePostalCode: event.target.value.trim()
+                      }))
+                    }
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">Language</span>
+                  <div className="relative">
+                    <select
+                      className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      value={draftConfig.lang}
+                      onChange={(event) =>
+                        updateDraftConfig((current) => ({
+                          ...current,
+                          lang: event.target.value as SupportedLanguage
+                        }))
+                      }
+                    >
+                      {LANGUAGE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <SelectChevronSmall />
+                  </div>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {PROMISE_SAMPLES.map((sample) => (
+                  <button
+                    key={sample.label}
+                    className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-slate-50 px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
+                    onClick={() =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseDestinationCountry: sample.destinationCountry,
+                        promisePostalCode: sample.postalCode,
+                        lang: sample.locale
+                      }))
+                    }
+                  >
+                    {sample.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Layout</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseLayout}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseLayout: event.target.value as PromiseLayout
+                      }))
+                    }
+                  >
+                    {PROMISE_LAYOUT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Date mode</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseDateMode}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseDateMode: event.target.value as PromiseDateMode
+                      }))
+                    }
+                  >
+                    {PROMISE_DATE_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Date format</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseDateFormat}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseDateFormat: event.target.value as PromiseDateFormat
+                      }))
+                    }
+                  >
+                    {PROMISE_DATE_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Confidence</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseConfidence}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseConfidence: event.target.value as PromiseConfidence
+                      }))
+                    }
+                  >
+                    {PROMISE_CONFIDENCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+            </section>
+
+            <section className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Icon</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseIcon}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseIcon: event.target.value as PromiseIcon
+                      }))
+                    }
+                  >
+                    {PROMISE_ICON_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Carrier</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseShowCarrier}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseShowCarrier: event.target.value as PromiseShowCarrier
+                      }))
+                    }
+                  >
+                    {PROMISE_SHOW_CARRIER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Zip picker</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseZipPicker}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseZipPicker: event.target.value as PromiseZipPicker
+                      }))
+                    }
+                  >
+                    {PROMISE_ZIP_PICKER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Show cutoff</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseShowCutoff}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseShowCutoff: event.target.value as PromiseShowCutoff
+                      }))
+                    }
+                  >
+                    {PROMISE_SHOW_CUTOFF_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+            </section>
+
+            <section className="grid grid-cols-4 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Reference date</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseSelectionReferenceDate}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseSelectionReferenceDate: event.target.value as PromiseSelectionReferenceDate
+                      }))
+                    }
+                  >
+                    {PROMISE_SELECTION_REFERENCE_DATE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Pick</span>
+                <div className="relative">
+                  <select
+                    className="h-8 w-full appearance-none rounded-md border border-slate-300 bg-white px-2 pr-7 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={draftConfig.promiseSelectionPick}
+                    onChange={(event) =>
+                      updateDraftConfig((current) => ({
+                        ...current,
+                        promiseSelectionPick: event.target.value as PromiseSelectionPick
+                      }))
+                    }
+                  >
+                    {PROMISE_SELECTION_PICK_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevronSmall />
+                </div>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Fallback days</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="3 or 2-3"
+                  value={draftConfig.promiseFallbackDays}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      promiseFallbackDays: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label className="flex items-end gap-1.5 pb-1.5">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  checked={draftConfig.promiseRequireZip}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      promiseRequireZip: event.target.checked
+                    }))
+                  }
+                />
+                <span className="text-[11px] font-medium text-slate-600">Require zip</span>
+              </label>
+            </section>
+
+            <section className="grid grid-cols-3 gap-2 rounded-lg border border-slate-200 bg-white p-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Courier</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="optional"
+                  value={draftConfig.promiseCourier}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      promiseCourier: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Service level</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="optional"
+                  value={draftConfig.promiseServiceLevel}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      promiseServiceLevel: event.target.value
+                    }))
+                  }
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">Warehouse</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="optional"
+                  value={draftConfig.promiseWarehouse}
+                  onChange={(event) =>
+                    updateDraftConfig((current) => ({
+                      ...current,
+                      promiseWarehouse: event.target.value
+                    }))
+                  }
+                />
+              </label>
+            </section>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md bg-blue-600 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-default disabled:bg-blue-300"
+                disabled={!canStartReplaceSelection}
+                onClick={() => void beginSelection('replace')}
+              >
+                {busyAction === 'replace-selection' ? 'Starting…' : 'Pick Element'}
+              </button>
+              <button
+                className="inline-flex h-9 w-full items-center justify-center whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-default disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                disabled={isHydrating || !activeTab.supported || busyAction !== null}
+                onClick={() => void beginSelection('hide')}
+              >
+                {busyAction === 'hide-selection' ? 'Starting…' : 'Hide Element'}
+              </button>
+            </div>
+          </>
         ) : null}
 
         {/* Selection Guide */}
@@ -1273,6 +1715,10 @@ function resolveRuleTypeLabel(rule: SavedModification): string {
 
   if (rule.demoConfig?.kind === 'track-and-trace') {
     return 'Tracking';
+  }
+
+  if (rule.demoConfig?.kind === 'promise') {
+    return 'Promise';
   }
 
   if (rule.demoConfig?.kind === 'selection-guide') {
