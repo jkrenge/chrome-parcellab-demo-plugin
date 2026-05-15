@@ -76,6 +76,12 @@ const PLUGIN_DOCS_URLS: Partial<Record<DemoPluginKind, string>> = {
   'chatbot': 'https://docs.parcellab.com/docs/developers/agents/agents'
 };
 
+const WINDOW_SIZES = [
+  { width: 1440, height: 900, label: 'Laptop' },
+  { width: 1680, height: 1050, label: 'Desktop' },
+  { width: 1920, height: 1080, label: 'Desktop' }
+] as const;
+
 type ActiveTabState = {
   id: number | null;
   title: string;
@@ -432,6 +438,36 @@ export default function App() {
     }
   }
 
+  async function resizeWindow(width: number, height: number): Promise<void> {
+    setBusyAction('resize-window');
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        lastFocusedWindow: true
+      });
+      const windowId = tab?.windowId;
+
+      if (windowId === undefined) {
+        throw new Error('Could not find the browser window.');
+      }
+
+      await chrome.windows.update(windowId, {
+        width,
+        height,
+        state: 'normal'
+      });
+
+      setStatusMessage(`Window resized to ${width} × ${height}.`);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : 'Could not resize window.'
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function copyPageDebugData(): Promise<void> {
     const pageRules = activeTab.normalizedScopeUrl
       ? allRules.filter(
@@ -519,10 +555,28 @@ export default function App() {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-900">
       <div className="space-y-4">
-        <header>
+        <header className="flex items-end justify-between gap-3">
           <h1 className="text-[24px] font-semibold tracking-tight text-slate-950">
             parcelLab Demo Layer
           </h1>
+          <div
+            aria-label="Resize browser window"
+            className="flex items-center gap-1"
+            role="group"
+          >
+            {WINDOW_SIZES.map((size) => (
+              <button
+                className="inline-flex h-6 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:cursor-default disabled:opacity-50"
+                disabled={busyAction === 'resize-window'}
+                key={`${size.width}x${size.height}`}
+                onClick={() => void resizeWindow(size.width, size.height)}
+                title={`${size.label} — ${size.width} × ${size.height}`}
+                type="button"
+              >
+                {size.width} × {size.height}
+              </button>
+            ))}
+          </div>
         </header>
 
         {updateInfo ? (
