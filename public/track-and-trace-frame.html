@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 320px;
+        background: transparent;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      #parcellab-track-and-trace {
+        min-height: 320px;
+      }
+
+      .pl-demo-frame-status {
+        max-width: 560px;
+        margin: 32px auto;
+        padding: 16px 18px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #334155;
+        font: 500 14px/1.5 system-ui, sans-serif;
+      }
+
+      .pl-demo-frame-status[data-kind="error"] {
+        border-color: rgba(239, 68, 68, 0.25);
+        background: #fef2f2;
+        color: #991b1b;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="parcellab-track-and-trace">
+      <div class="pl-demo-frame-status">Loading parcelLab Track &amp; Trace...</div>
+    </div>
+    <script>
+      (() => {
+        const CONTAINER_ID = 'parcellab-track-and-trace';
+        const RESIZE_MESSAGE_TYPE = 'PL_DEMO_TRACK_FRAME_RESIZE';
+        const params = new URLSearchParams(window.location.search);
+        const frameId = params.get('frameId') || '';
+
+        const postHeight = () => {
+          const height = Math.max(
+            320,
+            document.documentElement.scrollHeight,
+            document.body.scrollHeight,
+            document.documentElement.offsetHeight,
+            document.body.offsetHeight
+          );
+          window.parent.postMessage(
+            {
+              type: RESIZE_MESSAGE_TYPE,
+              frameId,
+              height
+            },
+            '*'
+          );
+        };
+
+        const showError = (message) => {
+          const container = document.getElementById(CONTAINER_ID);
+          if (!container) return;
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'pl-demo-frame-status';
+          wrapper.dataset.kind = 'error';
+          wrapper.textContent = message;
+          container.replaceChildren(wrapper);
+          postHeight();
+        };
+
+        const getUserId = () => {
+          const userId = Number(
+            params.get('plUserId') ||
+              params.get('userId') ||
+              params.get('user') ||
+              params.get('u') ||
+              '0'
+          );
+
+          if (!Number.isFinite(userId) || userId <= 0) {
+            showError('Missing parcelLab user ID.');
+            return null;
+          }
+
+          return userId;
+        };
+
+        const loadScript = (src) =>
+          new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('Could not load parcelLab Track & Trace.'));
+            document.head.appendChild(script);
+          });
+
+        const init = async () => {
+          const userId = getUserId();
+          if (!userId) return;
+
+          if (params.get('ospVersion') === 'ospv7') {
+            await loadScript('https://product-api.parcellab.com/static/track/embed/v1/osp-embed.js');
+            if (!customElements.get('pl-track-and-trace')) {
+              throw new Error('parcelLab OSPv7 did not load.');
+            }
+
+            const embed = document.createElement('pl-track-and-trace');
+            embed.setAttribute('account', String(userId));
+            embed.setAttribute('lang', params.get('lang') || 'en');
+            const ospKey = params.get('ospKey');
+            if (ospKey) embed.setAttribute('osp_key', ospKey);
+            document.getElementById(CONTAINER_ID)?.replaceChildren(embed);
+            postHeight();
+            return;
+          }
+
+          const stylesheet = document.createElement('link');
+          stylesheet.rel = 'stylesheet';
+          stylesheet.href = 'https://cdn.parcellab.com/css/v5/main.min.css';
+          document.head.appendChild(stylesheet);
+          await loadScript('https://cdn.parcellab.com/js/v5/main.min.js');
+
+          if (typeof window.parcelLabTrackAndTrace?.initialize !== 'function') {
+            throw new Error('parcelLab Track & Trace did not load.');
+          }
+
+          window.parcelLabTrackAndTrace.initialize({
+            plUserId: userId,
+            lang: params.get('lang') || 'en',
+            show_searchForm: true,
+            show_zipCodeInput: true,
+            show_articleList: params.get('showArticleList') !== 'false',
+            use_campaign_banners: true,
+            containerId: CONTAINER_ID
+          });
+
+          postHeight();
+        };
+
+        window.addEventListener('load', postHeight);
+        window.addEventListener('error', () => postHeight());
+
+        if (window.ResizeObserver) {
+          const observer = new ResizeObserver(postHeight);
+          observer.observe(document.documentElement);
+          observer.observe(document.body);
+        } else {
+          window.setInterval(postHeight, 500);
+        }
+
+        void init().catch((error) => {
+          showError(error instanceof Error ? error.message : 'parcelLab Track & Trace failed to load.');
+        });
+      })();
+    </script>
+  </body>
+</html>

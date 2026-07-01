@@ -10,12 +10,17 @@ import type {
   ChatMessage,
   PromiseDemoConfig,
   ReturnsPortalConfig,
+  SavedModification,
   SelectionGuideConfig,
   TrackAndTraceConfig
 } from '../shared/types';
 
 const CONTENT_SCRIPT_ID = 'parcellab-demo-content-script';
 const RETURNS_IFRAME_FIX_SCRIPT_ID = 'parcellab-returns-iframe-fix';
+const RETURNS_PORTAL_CSP_RULE_ID_START = 20_000;
+const RETURNS_PORTAL_FRAME_CSP_RULE_ID_START = 21_000;
+const RETURNS_PORTAL_CSP_RULE_LIMIT = 1_000;
+const RETURNS_PORTAL_FRAME_DOMAIN = 'returns-app.parcellab.com';
 const UPDATE_CHECK_ALARM = 'check-update';
 const UPDATE_CHECK_INTERVAL_MINUTES = 60;
 const GITHUB_RELEASES_URL =
@@ -230,6 +235,8 @@ chrome.runtime.onMessage.addListener(
 
 async function syncRegisteredContentScript(): Promise<void> {
   const rules = await getSavedModifications();
+  await syncReturnsPortalCspRules(rules);
+
   const matches = Array.from(
     new Set(rules.map((rule) => toMatchPattern(resolveRuleScopeUrl(rule))))
   );
@@ -274,6 +281,115 @@ async function syncRegisteredContentScript(): Promise<void> {
   }
 
   await chrome.scripting.registerContentScripts(scripts);
+}
+
+async function syncReturnsPortalCspRules(
+  rules: SavedModification[]
+): Promise<void> {
+  // CSP is response-scoped, so this must be installed before the page reloads.
+  const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
+  const removeRuleIds = existingRules
+    .filter(
+      (rule) =>
+        rule.id >= RETURNS_PORTAL_CSP_RULE_ID_START &&
+        rule.id <
+          RETURNS_PORTAL_FRAME_CSP_RULE_ID_START +
+            RETURNS_PORTAL_CSP_RULE_LIMIT
+    )
+    .map((rule) => rule.id);
+
+  const returnsPortalScopeUrls = Array.from(
+    new Set(
+      rules
+        .filter((rule) => rule.demoConfig?.kind === 'returns-portal')
+        .map((rule) => resolveRuleScopeUrl(rule))
+    )
+  )
+    .sort()
+    .slice(0, RETURNS_PORTAL_CSP_RULE_LIMIT);
+
+  const returnsPortalInitiatorDomains = Array.from(
+    new Set(
+      returnsPortalScopeUrls.map((scopeUrl) => new URL(scopeUrl).hostname)
+    )
+  )
+    .sort()
+    .slice(0, RETURNS_PORTAL_CSP_RULE_LIMIT);
+
+  const addRules = [
+    ...returnsPortalScopeUrls.map((scopeUrl, index) =>
+      createReturnsPortalPageCspRule(
+        RETURNS_PORTAL_CSP_RULE_ID_START + index,
+        scopeUrl
+      )
+    ),
+    ...returnsPortalInitiatorDomains.map((initiatorDomain, index) =>
+      createReturnsPortalFrameCspRule(
+        RETURNS_PORTAL_FRAME_CSP_RULE_ID_START + index,
+        initiatorDomain
+      )
+    )
+  ];
+
+  if (removeRuleIds.length === 0 && addRules.length === 0) {
+    return;
+  }
+
+  await chrome.declarativeNetRequest.updateDynamicRules({
+    removeRuleIds,
+    addRules
+  });
+}
+
+function createReturnsPortalPageCspRule(
+  id: number,
+  scopeUrl: string
+): chrome.declarativeNetRequest.Rule {
+  return {
+    id,
+    priority: 1,
+    action: createRemoveCspHeadersAction(),
+    condition: {
+      regexFilter: `^${escapeRegExp(scopeUrl)}([?#].*)?$`,
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME]
+    }
+  };
+}
+
+function createReturnsPortalFrameCspRule(
+  id: number,
+  initiatorDomain: string
+): chrome.declarativeNetRequest.Rule {
+  return {
+    id,
+    priority: 1,
+    action: createRemoveCspHeadersAction(),
+    condition: {
+      requestDomains: [RETURNS_PORTAL_FRAME_DOMAIN],
+      initiatorDomains: [initiatorDomain],
+      resourceTypes: [chrome.declarativeNetRequest.ResourceType.SUB_FRAME]
+    }
+  };
+}
+
+function createRemoveCspHeadersAction(): chrome.declarativeNetRequest.RuleAction {
+  return {
+    type: chrome.declarativeNetRequest.RuleActionType.MODIFY_HEADERS,
+    responseHeaders: [
+      {
+        header: 'content-security-policy',
+        operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE
+      },
+      {
+        header: 'content-security-policy-report-only',
+        operation: chrome.declarativeNetRequest.HeaderOperation.REMOVE
+      }
+    ]
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
 }
 
 async function renderTrackAndTrace(

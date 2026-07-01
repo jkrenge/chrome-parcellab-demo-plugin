@@ -64,7 +64,11 @@ const OVERLAY_ID = 'pl-demo-picker-overlay';
 const TOAST_ID = 'pl-demo-picker-toast';
 const TOOLTIP_ID = 'pl-demo-picker-tooltip';
 const INTERNAL_PREFIX = 'pl-demo-picker-';
+const TRACK_FRAME_RESIZE_MESSAGE_TYPE = 'PL_DEMO_TRACK_FRAME_RESIZE';
+const TRACK_FRAME_MIN_HEIGHT = 320;
+const TRACK_FRAME_MAX_HEIGHT = 5000;
 const appliedStates = new Map<string, AppliedState>();
+let hasInstalledTrackFrameMessageListener = false;
 
 function isExtensionContextValid(): boolean {
   try {
@@ -84,6 +88,7 @@ function createController(): Controller {
   let observer: MutationObserver | null = null;
   let applyTimer = 0;
   let lastKnownScopeUrl = normalizeCurrentScopeUrl();
+  let lastKnownUrl = normalizeCurrentUrl();
   let hasInstalledNavigationHooks = false;
 
   async function init(): Promise<void> {
@@ -103,6 +108,7 @@ function createController(): Controller {
     );
 
     installNavigationHooks();
+    installTrackFrameMessageListener();
     installObserver();
     await applyRulesForCurrentUrl();
   }
@@ -165,6 +171,49 @@ function createController(): Controller {
     });
   }
 
+  function installTrackFrameMessageListener(): void {
+    if (hasInstalledTrackFrameMessageListener) {
+      return;
+    }
+
+    hasInstalledTrackFrameMessageListener = true;
+
+    window.addEventListener('message', (event) => {
+      const data = event.data as
+        | {
+            type?: string;
+            frameId?: string;
+            height?: number;
+          }
+        | null;
+
+      if (
+        !data ||
+        data.type !== TRACK_FRAME_RESIZE_MESSAGE_TYPE ||
+        !data.frameId ||
+        typeof data.height !== 'number'
+      ) {
+        return;
+      }
+
+      const iframe = document.querySelector<HTMLIFrameElement>(
+        `iframe[data-pl-demo-track-frame-id="${escapeAttributeValue(
+          data.frameId
+        )}"]`
+      );
+
+      if (!iframe || event.source !== iframe.contentWindow) {
+        return;
+      }
+
+      const height = Math.min(
+        TRACK_FRAME_MAX_HEIGHT,
+        Math.max(TRACK_FRAME_MIN_HEIGHT, Math.ceil(data.height))
+      );
+      iframe.style.height = `${height}px`;
+    });
+  }
+
   function installNavigationHooks(): void {
     if (hasInstalledNavigationHooks) {
       return;
@@ -176,11 +225,17 @@ function createController(): Controller {
       if (!isExtensionContextValid()) return;
 
       const currentScopeUrl = normalizeCurrentScopeUrl();
+      const currentUrl = normalizeCurrentUrl();
       if (currentScopeUrl === lastKnownScopeUrl) {
+        if (currentUrl !== lastKnownUrl) {
+          lastKnownUrl = currentUrl;
+          void applyRulesForCurrentUrl();
+        }
         return;
       }
 
       lastKnownScopeUrl = currentScopeUrl;
+      lastKnownUrl = currentUrl;
       restoreRules(Array.from(appliedStates.keys()));
       void applyRulesForCurrentUrl();
     };
@@ -440,20 +495,33 @@ function createController(): Controller {
       summary,
       createdAt: new Date().toISOString()
     };
+    const requiresCspReload =
+      rule.action === 'replace' &&
+      normalizeDemoConfig(rule.demoConfig)?.kind === 'returns-portal';
 
     await saveModification(rule);
-    applyRule(rule);
+
+    if (!requiresCspReload) {
+      applyRule(rule);
+    }
+
     stopPicker();
     showToast(
-      rule.action === 'hide'
-        ? `Saved hide rule for ${summary}.`
-        : `Saved replacement rule for ${summary}.`
+      requiresCspReload
+        ? `Saved Returns Portal rule for ${summary}. Reloading to apply local CSP bypass.`
+        : rule.action === 'hide'
+          ? `Saved hide rule for ${summary}.`
+          : `Saved replacement rule for ${summary}.`
     );
 
     try {
       await chrome.runtime.sendMessage({ type: 'SYNC_RULES' });
     } catch {
       // The rule is already stored locally, so registration sync can fail silently.
+    }
+
+    if (requiresCspReload) {
+      window.setTimeout(() => window.location.reload(), 400);
     }
   }
 
@@ -814,9 +882,11 @@ function renderTrackAndTraceRule(
   }
 
   const containerId = `parcellab-track-and-trace-${rule.id}`;
+  const frameId = `${containerId}-frame`;
   const renderKey = `${demoConfig.ospVersion ?? 'ospv5'}:${demoConfig.ospKey ?? ''}:${demoConfig.userId}:${demoConfig.lang}:${String(
     demoConfig.showArticleList
-  )}`;
+  )}:${window.location.search}`;
+  const frameUrl = buildTrackAndTraceFrameUrl(frameId, demoConfig);
 
   let container = element.querySelector<HTMLElement>(
     `#${CSS.escape(containerId)}`
@@ -827,64 +897,76 @@ function renderTrackAndTraceRule(
     container = document.createElement('div');
     container.id = containerId;
     container.dataset.plDemoTrackRoot = 'true';
-    container.dataset.plDemoTrackKey = renderKey;
     container.style.position = 'relative';
-    container.style.minHeight = '320px';
-
-    const spinner = document.createElement('img');
-    spinner.src = 'https://cdn.parcellab.com/img/loading-spinner-1.gif';
-    spinner.alt = 'loading';
-    spinner.style.display = 'block';
-    spinner.style.margin = '32px auto';
-    container.appendChild(spinner);
+    container.style.minHeight = `${TRACK_FRAME_MIN_HEIGHT}px`;
     element.appendChild(container);
   }
 
-  if (
-    container.dataset.plDemoTrackKey === renderKey &&
-    (container.dataset.plDemoTrackRequested === 'pending' ||
-      container.dataset.plDemoTrackRequested === 'running' ||
-      container.dataset.plDemoTrackRendered === 'true')
-  ) {
+  const existingFrame = container.querySelector<HTMLIFrameElement>(
+    'iframe[data-pl-demo-track-frame="true"]'
+  );
+  if (container.dataset.plDemoTrackKey === renderKey && existingFrame?.src === frameUrl) {
     return;
   }
 
   container.dataset.plDemoTrackKey = renderKey;
-  container.dataset.plDemoTrackRequested = 'pending';
+  container.dataset.plDemoTrackRequested = 'running';
   container.dataset.plDemoTrackRendered = 'false';
 
-  void chrome.runtime
-    .sendMessage({
-      type: 'RENDER_TRACK_AND_TRACE',
-      containerId,
-      demoConfig
-    })
-    .then((response?: ContentResponse) => {
-      if (!container) {
-        return;
-      }
+  const iframe = document.createElement('iframe');
+  iframe.dataset.plDemoTrackFrame = 'true';
+  iframe.dataset.plDemoTrackFrameId = frameId;
+  iframe.title = 'parcelLab Track & Trace';
+  iframe.src = frameUrl;
+  iframe.loading = 'eager';
+  iframe.style.display = 'block';
+  iframe.style.width = '100%';
+  iframe.style.height = `${TRACK_FRAME_MIN_HEIGHT}px`;
+  iframe.style.border = '0';
+  iframe.style.background = 'transparent';
 
-      if (!response?.ok) {
-        container.dataset.plDemoTrackRequested = 'false';
-        container.dataset.plDemoTrackRendered = 'false';
-        showTrackAndTraceError(
-          container,
-          response?.error ?? 'parcelLab Track & Trace failed to render.'
-        );
-      }
-    })
-    .catch((error: unknown) => {
-      if (container) {
-        container.dataset.plDemoTrackRequested = 'false';
-        container.dataset.plDemoTrackRendered = 'false';
-        showTrackAndTraceError(
-          container,
-          error instanceof Error
-            ? error.message
-            : 'parcelLab Track & Trace failed to render.'
-        );
-      }
-    });
+  iframe.addEventListener('load', () => {
+    container.dataset.plDemoTrackRequested = 'true';
+    container.dataset.plDemoTrackRendered = 'true';
+  });
+  iframe.addEventListener('error', () => {
+    container.dataset.plDemoTrackRequested = 'false';
+    container.dataset.plDemoTrackRendered = 'false';
+    showTrackAndTraceError(
+      container,
+      'parcelLab Track & Trace frame failed to load.'
+    );
+  });
+
+  container.replaceChildren(iframe);
+}
+
+function buildTrackAndTraceFrameUrl(
+  frameId: string,
+  demoConfig: TrackAndTraceConfig
+): string {
+  const frameUrl = new URL(chrome.runtime.getURL('track-and-trace-frame.html'));
+  const currentParams = new URLSearchParams(window.location.search);
+
+  currentParams.forEach((value, key) => {
+    frameUrl.searchParams.append(key, value);
+  });
+
+  ['frameId', 'plUserId', 'userId', 'user', 'u'].forEach((key) => {
+    frameUrl.searchParams.delete(key);
+  });
+
+  frameUrl.searchParams.set('frameId', frameId);
+  frameUrl.searchParams.set('ospVersion', demoConfig.ospVersion ?? 'ospv5');
+  frameUrl.searchParams.set('ospKey', demoConfig.ospKey ?? '');
+  frameUrl.searchParams.set('plUserId', demoConfig.userId);
+  frameUrl.searchParams.set('lang', demoConfig.lang);
+  frameUrl.searchParams.set(
+    'showArticleList',
+    String(demoConfig.showArticleList)
+  );
+
+  return frameUrl.toString();
 }
 
 function renderReturnsPortalRule(
