@@ -632,6 +632,29 @@ export default function App() {
         {/* Track & Trace */}
         {draftConfig.plugin === 'track-and-trace' ? (
           <section className="space-y-2.5 rounded-lg border border-slate-200 bg-white p-3">
+            <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1" role="group" aria-label="Order status page version">
+              {(['ospv5', 'ospv7'] as const).map((version) => (
+                <button
+                  key={version}
+                  aria-pressed={draftConfig.ospVersion === version}
+                  className={`h-8 rounded text-xs font-semibold transition ${draftConfig.ospVersion === version ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                  onClick={() => updateDraftConfig((current) => ({ ...current, ospVersion: version }))}
+                >
+                  {version === 'ospv5' ? 'OSPv5' : 'OSPv7'}
+                </button>
+              ))}
+            </div>
+            {draftConfig.ospVersion === 'ospv7' ? (
+              <label className="block space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">OSP key (optional)</span>
+                <input
+                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Default order status page"
+                  value={draftConfig.ospKey}
+                  onChange={(event) => updateDraftConfig((current) => ({ ...current, ospKey: event.target.value.trimStart() }))}
+                />
+              </label>
+            ) : null}
             <div className="grid grid-cols-2 gap-2">
               <label className="space-y-1">
                 <span className="text-[11px] font-medium text-slate-500">User ID</span>

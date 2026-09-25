@@ -33,6 +33,8 @@ type LegacyTrackAndTraceConfig = {
 
 export const DEFAULT_DEMO_DRAFT_CONFIG: DemoDraftConfig = {
   plugin: 'track-and-trace',
+  ospVersion: 'ospv5',
+  ospKey: '',
   accountId: '1612197',
   lang: 'en',
   portalCode: '',
@@ -336,6 +338,8 @@ export function normalizeDemoConfig(
   if ('kind' in value && value.kind === 'track-and-trace') {
     return {
       kind: 'track-and-trace',
+      ospVersion: 'ospVersion' in value && value.ospVersion === 'ospv7' ? 'ospv7' : 'ospv5',
+      ospKey: 'ospKey' in value && typeof value.ospKey === 'string' ? value.ospKey : '',
       userId: value.userId,
       lang: value.lang,
       showArticleList: value.showArticleList
@@ -353,6 +357,8 @@ export function normalizeDemoConfig(
   if ('userId' in value) {
     return {
       kind: 'track-and-trace',
+      ospVersion: 'ospVersion' in value && value.ospVersion === 'ospv7' ? 'ospv7' : 'ospv5',
+      ospKey: 'ospKey' in value && typeof value.ospKey === 'string' ? value.ospKey : '',
       userId: value.userId,
       lang: value.lang,
       showArticleList: value.showArticleList
@@ -380,6 +386,8 @@ export function normalizeDemoDraftConfig(
 
   return {
     plugin,
+    ospVersion: value?.ospVersion === 'ospv7' ? 'ospv7' : 'ospv5',
+    ospKey: typeof value?.ospKey === 'string' ? value.ospKey : '',
     accountId:
       typeof value?.accountId === 'string'
         ? value.accountId
@@ -506,6 +514,8 @@ export function buildDemoConfigFromDraft(
 
   return {
     kind: 'track-and-trace',
+    ospVersion: draft.ospVersion,
+    ospKey: draft.ospKey.trim(),
     userId: draft.accountId.trim(),
     lang: draft.lang,
     showArticleList: draft.showArticleList
@@ -595,6 +605,8 @@ export function mergeDemoConfigIntoDraft(
   return {
     ...draft,
     plugin: 'track-and-trace',
+    ospVersion: config.ospVersion ?? 'ospv5',
+    ospKey: config.ospKey ?? '',
     accountId: config.userId,
     lang: config.lang,
     showArticleList: config.showArticleList
@@ -694,7 +706,7 @@ export function formatDemoConfigSummary(value?: DemoConfig): string | undefined 
     return `Text Replace · "${preview}"`;
   }
 
-  return `Track & Trace · ${config.userId} · ${formatLanguageLabel(config.lang)}`;
+  return `${config.ospVersion === 'ospv7' ? 'OSPv7' : 'OSPv5'} · ${config.userId} · ${formatLanguageLabel(config.lang)}`;
 }
 
 function isSupportedLanguage(value: unknown): value is SupportedLanguage {
