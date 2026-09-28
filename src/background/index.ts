@@ -296,6 +296,7 @@ async function renderTrackAndTrace(
 
       type TrackAndTraceWindow = Window & {
         __plDemoTrackLoaderPromise__?: Promise<void>;
+        __plDemoOspV7LoaderPromise__?: Promise<void>;
         parcelLabTrackAndTrace?: {
           initialize: (options: {
             plUserId: number;
@@ -332,7 +333,7 @@ async function renderTrackAndTrace(
         container.replaceChildren(wrapper);
       };
 
-      const renderKey = `${config.userId}:${config.lang}:${String(
+      const renderKey = `${config.ospVersion ?? 'ospv5'}:${config.ospKey ?? ''}:${config.userId}:${config.lang}:${String(
         config.showArticleList
       )}`;
       if (
@@ -345,6 +346,61 @@ async function renderTrackAndTrace(
       container.dataset.plDemoTrackKey = renderKey;
       container.dataset.plDemoTrackRequested = 'running';
       container.dataset.plDemoTrackRendered = 'false';
+
+      if (config.ospVersion === 'ospv7') {
+        const ensureOspV7 = () => {
+          if (customElements.get('pl-track-and-trace')) {
+            return Promise.resolve();
+          }
+          if (!scopedWindow.__plDemoOspV7LoaderPromise__) {
+            scopedWindow.__plDemoOspV7LoaderPromise__ = new Promise<void>((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://product-api.parcellab.com/static/track/embed/v1/osp-embed.js';
+              script.async = true;
+              const timeout = window.setTimeout(() => fail(), 15000);
+              const fail = () => {
+                window.clearTimeout(timeout);
+                script.remove();
+                reject(new Error('Could not load the OSPv7 embed. Check the page’s content security policy.'));
+              };
+              script.onerror = fail;
+              script.onload = () => {
+                if (!customElements.get('pl-track-and-trace')) {
+                  fail();
+                  return;
+                }
+                window.clearTimeout(timeout);
+                resolve();
+              };
+              document.head.appendChild(script);
+            }).catch((error) => {
+              scopedWindow.__plDemoOspV7LoaderPromise__ = undefined;
+              throw error;
+            });
+          }
+          return scopedWindow.__plDemoOspV7LoaderPromise__;
+        };
+
+        void ensureOspV7().then(() => {
+          if (!container.isConnected || container.dataset.plDemoTrackKey !== renderKey) {
+            return;
+          }
+          const embed = document.createElement('pl-track-and-trace');
+          embed.setAttribute('account', config.userId);
+          embed.setAttribute('lang', config.lang);
+          if (config.ospKey) {
+            embed.setAttribute('osp_key', config.ospKey);
+          }
+          container.replaceChildren(embed);
+          container.dataset.plDemoTrackRequested = 'true';
+          container.dataset.plDemoTrackRendered = 'true';
+        }).catch((error: unknown) => {
+          if (container.isConnected && container.dataset.plDemoTrackKey === renderKey) {
+            showContainerError(error instanceof Error ? error.message : 'OSPv7 failed to render.');
+          }
+        });
+        return { ok: true };
+      }
 
       if (!document.getElementById(STYLES_ID)) {
         const linkTag = document.createElement('link');

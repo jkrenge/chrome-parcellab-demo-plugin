@@ -31,8 +31,12 @@ export type SupportedLanguage =
   | 'ja'
   | 'ko';
 
+export type OspVersion = 'ospv5' | 'ospv7';
+
 export type TrackAndTraceConfig = {
   kind: 'track-and-trace';
+  ospVersion?: OspVersion;
+  ospKey?: string;
   userId: string;
   lang: SupportedLanguage;
   showArticleList: boolean;
@@ -107,6 +111,8 @@ export type DemoConfig =
 
 export type DemoDraftConfig = {
   plugin: DemoPluginKind;
+  ospVersion: OspVersion;
+  ospKey: string;
   accountId: string;
   lang: SupportedLanguage;
   portalCode: string;

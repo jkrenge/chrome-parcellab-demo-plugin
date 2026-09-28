@@ -814,7 +814,7 @@ function renderTrackAndTraceRule(
   }
 
   const containerId = `parcellab-track-and-trace-${rule.id}`;
-  const renderKey = `${demoConfig.userId}:${demoConfig.lang}:${String(
+  const renderKey = `${demoConfig.ospVersion ?? 'ospv5'}:${demoConfig.ospKey ?? ''}:${demoConfig.userId}:${demoConfig.lang}:${String(
     demoConfig.showArticleList
   )}`;
 
