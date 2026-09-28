@@ -79,3 +79,20 @@ test('already registered embed needs no second loader and default page omits osp
   assert.equal(h.scripts.length, 0);
   assert.equal(h.container.children[0].attributes.osp_key, undefined);
 });
+
+test('OSPv7 bypasses the extension-origin frame wrapper', async () => {
+  const content = await readFile(new URL('../src/content/index.ts', import.meta.url), 'utf8');
+  const start = content.indexOf('function renderTrackAndTraceRule(');
+  const end = content.indexOf('function renderOspV7Rule(', start);
+  const { code } = await transform(content.slice(start, end), { loader: 'ts' });
+  let directCalls = 0;
+  const context = {
+    normalizeDemoConfig: demo.normalizeDemoConfig,
+    renderOspV7Rule: () => { directCalls += 1; },
+    buildTrackAndTraceFrameUrl: () => { throw new Error('OSPv7 must not use an extension frame'); }
+  };
+  vm.createContext(context);
+  vm.runInContext(code, context);
+  context.renderTrackAndTraceRule({}, { demoConfig: config });
+  assert.equal(directCalls, 1);
+});

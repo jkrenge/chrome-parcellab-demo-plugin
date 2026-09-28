@@ -881,6 +881,11 @@ function renderTrackAndTraceRule(
     return;
   }
 
+  if (demoConfig.ospVersion === 'ospv7') {
+    renderOspV7Rule(element, rule);
+    return;
+  }
+
   const containerId = `parcellab-track-and-trace-${rule.id}`;
   const frameId = `${containerId}-frame`;
   const renderKey = `${demoConfig.ospVersion ?? 'ospv5'}:${demoConfig.ospKey ?? ''}:${demoConfig.userId}:${demoConfig.lang}:${String(
@@ -939,6 +944,89 @@ function renderTrackAndTraceRule(
   });
 
   container.replaceChildren(iframe);
+}
+
+function renderOspV7Rule(
+  element: HTMLElement,
+  rule: SavedModification
+): void {
+  const demoConfig = normalizeDemoConfig(rule.demoConfig);
+  if (demoConfig?.kind !== 'track-and-trace') {
+    return;
+  }
+
+  const containerId = `parcellab-track-and-trace-${rule.id}`;
+  const renderKey = `${demoConfig.ospVersion ?? 'ospv5'}:${demoConfig.ospKey ?? ''}:${demoConfig.userId}:${demoConfig.lang}:${String(
+    demoConfig.showArticleList
+  )}`;
+
+  let container = element.querySelector<HTMLElement>(
+    `#${CSS.escape(containerId)}`
+  );
+
+  if (!container) {
+    element.innerHTML = '';
+    container = document.createElement('div');
+    container.id = containerId;
+    container.dataset.plDemoTrackRoot = 'true';
+    container.dataset.plDemoTrackKey = renderKey;
+    container.style.position = 'relative';
+    container.style.minHeight = '320px';
+
+    const spinner = document.createElement('img');
+    spinner.src = 'https://cdn.parcellab.com/img/loading-spinner-1.gif';
+    spinner.alt = 'loading';
+    spinner.style.display = 'block';
+    spinner.style.margin = '32px auto';
+    container.appendChild(spinner);
+    element.appendChild(container);
+  }
+
+  if (
+    container.dataset.plDemoTrackKey === renderKey &&
+    (container.dataset.plDemoTrackRequested === 'pending' ||
+      container.dataset.plDemoTrackRequested === 'running' ||
+      container.dataset.plDemoTrackRendered === 'true')
+  ) {
+    return;
+  }
+
+  container.dataset.plDemoTrackKey = renderKey;
+  container.dataset.plDemoTrackRequested = 'pending';
+  container.dataset.plDemoTrackRendered = 'false';
+
+  void chrome.runtime
+    .sendMessage({
+      type: 'RENDER_TRACK_AND_TRACE',
+      containerId,
+      demoConfig
+    })
+    .then((response?: ContentResponse) => {
+      if (!container) {
+        return;
+      }
+
+      if (!response?.ok) {
+        container.dataset.plDemoTrackRequested = 'false';
+        container.dataset.plDemoTrackRendered = 'false';
+        showTrackAndTraceError(
+          container,
+          response?.error ?? 'parcelLab Track & Trace failed to render.'
+        );
+      }
+    })
+    .catch((error: unknown) => {
+      if (container) {
+        container.dataset.plDemoTrackRequested = 'false';
+        container.dataset.plDemoTrackRendered = 'false';
+        showTrackAndTraceError(
+          container,
+          error instanceof Error
+            ? error.message
+            : 'parcelLab Track & Trace failed to render.'
+        );
+      }
+    });
 }
 
 function buildTrackAndTraceFrameUrl(
