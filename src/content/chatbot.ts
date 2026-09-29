@@ -11,9 +11,15 @@ let isOpen = false;
 let shadowRoot: ShadowRoot | null = null;
 
 export function injectChatbot(config: ChatbotConfig): void {
+  const configChanged =
+    currentConfig !== null && !isSameConfig(currentConfig, config);
   currentConfig = config;
 
   if (document.getElementById(WIDGET_HOST_ID)) {
+    if (configChanged) {
+      resetConversation();
+      render();
+    }
     return;
   }
 
@@ -43,6 +49,25 @@ export function removeChatbot(): void {
   errorMessage = '';
   isOpen = false;
   shadowRoot = null;
+}
+
+function resetConversation(): void {
+  threadId = null;
+  messages = [];
+  isLoading = false;
+  errorMessage = '';
+}
+
+function isSameConfig(a: ChatbotConfig, b: ChatbotConfig): boolean {
+  return (
+    a.agentId.trim() === b.agentId.trim() &&
+    a.account === b.account &&
+    normalizeBaseUrl(a.baseUrl) === normalizeBaseUrl(b.baseUrl)
+  );
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
 }
 
 function render(): void {
