@@ -96,3 +96,48 @@ test('OSPv7 bypasses the extension-origin frame wrapper', async () => {
   context.renderTrackAndTraceRule({}, { demoConfig: config });
   assert.equal(directCalls, 1);
 });
+
+const cspSource = background.slice(background.indexOf('async function syncDemoCspRules('), background.indexOf('async function renderTrackAndTrace('));
+const cspCompiled = await transform(cspSource, { loader: 'ts' });
+
+test('CSP bypass covers only saved OSPv7/returns pages and removes stale rules', async () => {
+  let update;
+  const context = {
+    DEMO_PAGE_CSP_RULE_ID_START: 20000,
+    RETURNS_PORTAL_FRAME_CSP_RULE_ID_START: 21000,
+    RETURNS_PORTAL_CSP_RULE_LIMIT: 1000,
+    RETURNS_PORTAL_FRAME_DOMAIN: 'returns-app.parcellab.com',
+    URL,
+    resolveRuleScopeUrl: (rule) => rule.scopeUrl,
+    chrome: { declarativeNetRequest: {
+      getDynamicRules: async () => [{ id: 20000 }, { id: 21000 }, { id: 99 }],
+      updateDynamicRules: async (value) => { update = value; },
+      ResourceType: { MAIN_FRAME: 'main_frame', SUB_FRAME: 'sub_frame' },
+      RuleActionType: { MODIFY_HEADERS: 'modifyHeaders' },
+      HeaderOperation: { REMOVE: 'remove' }
+    } }
+  };
+  vm.createContext(context);
+  vm.runInContext(cspCompiled.code, context);
+  await context.syncDemoCspRules([
+    { scopeUrl: 'https://shop.lululemon.com/demo', demoConfig: config },
+    { scopeUrl: 'https://shop.lululemon.com/demo', demoConfig: config },
+    { scopeUrl: 'https://other.example/legacy', demoConfig: { ...config, ospVersion: 'ospv5' } },
+    { scopeUrl: 'https://returns.example/demo', demoConfig: { kind: 'returns-portal' } }
+  ]);
+  assert.deepEqual(Array.from(update.removeRuleIds), [20000, 21000]);
+  const pages = update.addRules.filter((rule) => rule.condition.resourceTypes[0] === 'main_frame');
+  assert.equal(pages.length, 2);
+  const ospRule = pages.find((rule) => new RegExp(rule.condition.regexFilter).test('https://shop.lululemon.com/demo'));
+  const matcher = new RegExp(ospRule.condition.regexFilter);
+  assert.ok(matcher.test('https://shop.lululemon.com/demo?order=123'));
+  assert.equal(matcher.test('https://shop.lululemon.com/other'), false);
+  assert.equal(matcher.test('https://shop.lululemon.com/demo/other'), false);
+  assert.equal(matcher.test('https://shopXlululemon.com/demo'), false);
+  const frames = update.addRules.filter((rule) => rule.condition.resourceTypes[0] === 'sub_frame');
+  assert.equal(frames.length, 1);
+  assert.deepEqual(Array.from(frames[0].condition.initiatorDomains), ['returns.example']);
+  await context.syncDemoCspRules([]);
+  assert.equal(update.addRules.length, 0);
+  assert.deepEqual(Array.from(update.removeRuleIds), [20000, 21000]);
+});

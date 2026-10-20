@@ -495,9 +495,12 @@ function createController(): Controller {
       summary,
       createdAt: new Date().toISOString()
     };
+    const savedDemoConfig = normalizeDemoConfig(rule.demoConfig);
     const requiresCspReload =
       rule.action === 'replace' &&
-      normalizeDemoConfig(rule.demoConfig)?.kind === 'returns-portal';
+      (savedDemoConfig?.kind === 'returns-portal' ||
+        (savedDemoConfig?.kind === 'track-and-trace' &&
+          savedDemoConfig.ospVersion === 'ospv7'));
 
     await saveModification(rule);
 
@@ -508,7 +511,7 @@ function createController(): Controller {
     stopPicker();
     showToast(
       requiresCspReload
-        ? `Saved Returns Portal rule for ${summary}. Reloading to apply local CSP bypass.`
+        ? `Saved demo rule for ${summary}. Reloading to apply local CSP bypass.`
         : rule.action === 'hide'
           ? `Saved hide rule for ${summary}.`
           : `Saved replacement rule for ${summary}.`
