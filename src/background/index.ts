@@ -17,7 +17,7 @@ import type {
 
 const CONTENT_SCRIPT_ID = 'parcellab-demo-content-script';
 const RETURNS_IFRAME_FIX_SCRIPT_ID = 'parcellab-returns-iframe-fix';
-const RETURNS_PORTAL_CSP_RULE_ID_START = 20_000;
+const DEMO_PAGE_CSP_RULE_ID_START = 20_000;
 const RETURNS_PORTAL_FRAME_CSP_RULE_ID_START = 21_000;
 const RETURNS_PORTAL_CSP_RULE_LIMIT = 1_000;
 const RETURNS_PORTAL_FRAME_DOMAIN = 'returns-app.parcellab.com';
@@ -235,7 +235,7 @@ chrome.runtime.onMessage.addListener(
 
 async function syncRegisteredContentScript(): Promise<void> {
   const rules = await getSavedModifications();
-  await syncReturnsPortalCspRules(rules);
+  await syncDemoCspRules(rules);
 
   const matches = Array.from(
     new Set(rules.map((rule) => toMatchPattern(resolveRuleScopeUrl(rule))))
@@ -283,7 +283,7 @@ async function syncRegisteredContentScript(): Promise<void> {
   await chrome.scripting.registerContentScripts(scripts);
 }
 
-async function syncReturnsPortalCspRules(
+async function syncDemoCspRules(
   rules: SavedModification[]
 ): Promise<void> {
   // CSP is response-scoped, so this must be installed before the page reloads.
@@ -291,17 +291,21 @@ async function syncReturnsPortalCspRules(
   const removeRuleIds = existingRules
     .filter(
       (rule) =>
-        rule.id >= RETURNS_PORTAL_CSP_RULE_ID_START &&
+        rule.id >= DEMO_PAGE_CSP_RULE_ID_START &&
         rule.id <
           RETURNS_PORTAL_FRAME_CSP_RULE_ID_START +
             RETURNS_PORTAL_CSP_RULE_LIMIT
     )
     .map((rule) => rule.id);
 
-  const returnsPortalScopeUrls = Array.from(
+  const demoPageScopeUrls = Array.from(
     new Set(
       rules
-        .filter((rule) => rule.demoConfig?.kind === 'returns-portal')
+        .filter((rule) =>
+          rule.demoConfig?.kind === 'returns-portal' ||
+          (rule.demoConfig?.kind === 'track-and-trace' &&
+            rule.demoConfig.ospVersion === 'ospv7')
+        )
         .map((rule) => resolveRuleScopeUrl(rule))
     )
   )
@@ -310,16 +314,18 @@ async function syncReturnsPortalCspRules(
 
   const returnsPortalInitiatorDomains = Array.from(
     new Set(
-      returnsPortalScopeUrls.map((scopeUrl) => new URL(scopeUrl).hostname)
+      rules
+        .filter((rule) => rule.demoConfig?.kind === 'returns-portal')
+        .map((rule) => new URL(resolveRuleScopeUrl(rule)).hostname)
     )
   )
     .sort()
     .slice(0, RETURNS_PORTAL_CSP_RULE_LIMIT);
 
   const addRules = [
-    ...returnsPortalScopeUrls.map((scopeUrl, index) =>
-      createReturnsPortalPageCspRule(
-        RETURNS_PORTAL_CSP_RULE_ID_START + index,
+    ...demoPageScopeUrls.map((scopeUrl, index) =>
+      createDemoPageCspRule(
+        DEMO_PAGE_CSP_RULE_ID_START + index,
         scopeUrl
       )
     ),
@@ -341,7 +347,7 @@ async function syncReturnsPortalCspRules(
   });
 }
 
-function createReturnsPortalPageCspRule(
+function createDemoPageCspRule(
   id: number,
   scopeUrl: string
 ): chrome.declarativeNetRequest.Rule {
