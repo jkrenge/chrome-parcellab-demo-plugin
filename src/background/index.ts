@@ -17,6 +17,7 @@ import type {
 
 const CONTENT_SCRIPT_ID = 'parcellab-demo-content-script';
 const RETURNS_IFRAME_FIX_SCRIPT_ID = 'parcellab-returns-iframe-fix';
+const OSP_IFRAME_FIX_SCRIPT_ID = 'parcellab-osp-iframe-fix';
 const DEMO_PAGE_CSP_RULE_ID_START = 20_000;
 const RETURNS_PORTAL_FRAME_CSP_RULE_ID_START = 21_000;
 const RETURNS_PORTAL_CSP_RULE_LIMIT = 1_000;
@@ -246,7 +247,7 @@ async function syncRegisteredContentScript(): Promise<void> {
   );
 
   const existing = await chrome.scripting.getRegisteredContentScripts({
-    ids: [CONTENT_SCRIPT_ID, RETURNS_IFRAME_FIX_SCRIPT_ID]
+    ids: [CONTENT_SCRIPT_ID, RETURNS_IFRAME_FIX_SCRIPT_ID, OSP_IFRAME_FIX_SCRIPT_ID]
   });
 
   if (existing.length > 0) {
@@ -277,6 +278,17 @@ async function syncRegisteredContentScript(): Promise<void> {
       allFrames: true,
       persistAcrossSessions: true,
       runAt: 'document_start'
+    });
+  }
+
+  if (rules.some((rule) => rule.demoConfig?.kind === 'track-and-trace' && rule.demoConfig.ospVersion === 'ospv7')) {
+    scripts.push({
+      id: OSP_IFRAME_FIX_SCRIPT_ID,
+      js: ['osp-iframe-fix.js'],
+      matches: ['https://product-api.parcellab.com/track/order-info*', 'https://product-api.parcellab.com/order-info/*'],
+      allFrames: true,
+      persistAcrossSessions: true,
+      runAt: 'document_idle'
     });
   }
 

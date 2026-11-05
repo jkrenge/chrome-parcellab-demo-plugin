@@ -60,7 +60,14 @@ const contentContext = await esbuildContext({
   outfile: resolve(distDir, 'content.js')
 });
 
-await Promise.all([backgroundContext.watch(), contentContext.watch()]);
+const ospFrameContext = await esbuildContext({
+  ...sharedBuildOptions(),
+  entryPoints: [resolve(rootDir, 'src/content/osp-iframe-fix.ts')],
+  format: 'iife',
+  outfile: resolve(distDir, 'osp-iframe-fix.js')
+});
+
+await Promise.all([backgroundContext.watch(), contentContext.watch(), ospFrameContext.watch()]);
 
 console.log('Watching extension files. Reload the unpacked extension after changes.');
 
@@ -68,7 +75,7 @@ async function shutdown() {
   if ('close' in viteWatcher && typeof viteWatcher.close === 'function') {
     viteWatcher.close();
   }
-  await Promise.all([backgroundContext.dispose(), contentContext.dispose()]);
+  await Promise.all([backgroundContext.dispose(), contentContext.dispose(), ospFrameContext.dispose()]);
   process.exit(0);
 }
 

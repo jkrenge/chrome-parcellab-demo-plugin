@@ -35,6 +35,12 @@ await viteBuild({
 await Promise.all([
   esbuild({
     ...sharedBuildOptions(),
+    entryPoints: [resolve(rootDir, 'src/content/osp-iframe-fix.ts')],
+    format: 'iife',
+    outfile: resolve(distDir, 'osp-iframe-fix.js')
+  }),
+  esbuild({
+    ...sharedBuildOptions(),
     entryPoints: [resolve(rootDir, 'src/background/index.ts')],
     format: 'esm',
     outfile: resolve(distDir, 'background.js')

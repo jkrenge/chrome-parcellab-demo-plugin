@@ -67,6 +67,8 @@ const INTERNAL_PREFIX = 'pl-demo-picker-';
 const TRACK_FRAME_RESIZE_MESSAGE_TYPE = 'PL_DEMO_TRACK_FRAME_RESIZE';
 const TRACK_FRAME_MIN_HEIGHT = 320;
 const TRACK_FRAME_MAX_HEIGHT = 5000;
+const OSP_V7_HEIGHT_MESSAGE_TYPE = 'parcellab:osp:height';
+const OSP_V7_FRAME_MAX_HEIGHT = 10000;
 const appliedStates = new Map<string, AppliedState>();
 let hasInstalledTrackFrameMessageListener = false;
 
@@ -186,6 +188,48 @@ function createController(): Controller {
             height?: number;
           }
         | null;
+
+      if (data?.type === 'PL_DEMO_OSP_FRAME_READY') {
+        if (event.origin !== 'https://product-api.parcellab.com') return;
+        for (const embed of document.querySelectorAll('[data-pl-demo-track-root="true"] pl-track-and-trace')) {
+          const frame = embed.shadowRoot?.querySelector('iframe');
+          if (frame?.contentWindow && frame.contentWindow === event.source) {
+            frame.contentWindow.postMessage({ type: 'PL_DEMO_OSP_HIDE_HEADER' }, event.origin);
+            break;
+          }
+        }
+        return;
+      }
+
+      if (data?.type === OSP_V7_HEIGHT_MESSAGE_TYPE) {
+        if (
+          event.origin !== 'https://product-api.parcellab.com' ||
+          typeof data.height !== 'number' ||
+          !Number.isFinite(data.height)
+        ) {
+          return;
+        }
+
+        const embeds = document.querySelectorAll(
+          '[data-pl-demo-track-root="true"] pl-track-and-trace'
+        );
+        for (const embed of embeds) {
+          const frame = embed.shadowRoot?.querySelector('iframe');
+          if (frame && frame.contentWindow === event.source) {
+            const height = Math.min(
+              OSP_V7_FRAME_MAX_HEIGHT,
+              Math.max(TRACK_FRAME_MIN_HEIGHT, Math.ceil(data.height))
+            );
+            // Override the loader's 800px minimum only after a valid message.
+            frame.style.minHeight = `${TRACK_FRAME_MIN_HEIGHT}px`;
+            if (frame.style.height !== `${height}px`) {
+              frame.style.height = `${height}px`;
+            }
+            break;
+          }
+        }
+        return;
+      }
 
       if (
         !data ||
